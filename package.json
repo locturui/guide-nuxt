@@ -17,6 +17,7 @@
     "@nuxt/eslint": "1.4.1",
     "@nuxt/icon": "1.13.0",
     "@tailwindcss/vite": "^4.1.7",
+    "daisyui": "^5.0.35",
     "eslint": "^9.27.0",
     "nuxt": "^3.17.3",
     "tailwindcss": "^4.1.7",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@antfu/eslint-config": "^4.13.1",
+    "@iconify-json/tabler": "^1.2.18",
     "eslint-plugin-format": "^1.0.1",
     "husky": "^9.1.7",
     "lint-staged": "^16.0.0"
