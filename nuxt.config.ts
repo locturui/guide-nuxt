@@ -2,18 +2,21 @@ import tailwindcss from "@tailwindcss/vite";
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  compatibilityDate: "2025-05-20",
+  compatibilityDate: "2025-05-15",
   devtools: { enabled: true },
-  css: ["~/assets/css/main.css"],
-  modules: ["@nuxt/eslint", "@nuxt/icon"],
-  eslint: {
-    config: {
-      standalone: false,
-    },
-  },
+  modules: ["@nuxt/eslint", "@nuxt/icon", "@pinia/nuxt"],
+  css: ["~/assets/css/main.css", "vue-cal/style"],
   vite: {
     plugins: [
       tailwindcss(),
     ],
+  },
+  runtimeConfig: {
+    public: {
+      // eslint-disable-next-line node/no-process-env
+      nodeEnv: process.env.NODE_ENV,
+      // eslint-disable-next-line node/no-process-env
+      apiBase: process.env.BASE_URL,
+    },
   },
 });
