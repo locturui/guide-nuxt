@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// const authStore = useAuthStore();
+const auth = useAuthStore();
 </script>
 
 <template>
@@ -18,7 +18,7 @@
           to="/bookings"
           class="btn btn-primary"
         >
-          К расписанию
+          {{ auth.isAuthenticated ? "Перейти к бронированиям" : "Войти" }}
         </NuxtLink>
       </div>
     </div>
