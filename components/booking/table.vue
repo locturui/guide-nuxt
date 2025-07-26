@@ -7,6 +7,8 @@ const allBookings = ref([
 
 const currentAgentId = ref(101);
 const isAdmin = ref(false);
+const jumpToDate = ref("");
+const showDateInput = ref(false);
 
 const showModal = ref(false);
 const formDate = ref("");
@@ -27,6 +29,13 @@ function nextWeek() {
 }
 function prevWeek() {
   weekStart.value = new Date(weekStart.value.getTime() - 7 * 86400000);
+}
+
+function jumpToSelectedDate() {
+  if (!jumpToDate.value)
+    return;
+  weekStart.value = startOfWeek(new Date(jumpToDate.value));
+  showDateInput.value = false;
 }
 
 const weekDays = computed(() => {
@@ -139,9 +148,35 @@ const hours = Array.from({ length: 12 }, (_, i) => i + 9)
       <button class="btn btn-sm" @click="prevWeek">
         Previous
       </button>
-      <h2 class="text-lg font-bold">
-        {{ formatDate(weekStart) }}
-      </h2>
+
+      <div class="relative">
+        <h2
+          class="text-lg font-bold cursor-pointer underline"
+          @click="showDateInput = true"
+        >
+          {{ formatDate(weekStart) }}
+        </h2>
+
+        <div
+          v-if="showDateInput"
+          class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-base-200 p-2 rounded shadow z-10"
+        >
+          <input
+            v-model="jumpToDate"
+            type="date"
+            class="input input-sm input-bordered"
+          >
+          <div class="flex justify-end mt-1 gap-2">
+            <button class="btn btn-sm btn-primary" @click="jumpToSelectedDate">
+              Go
+            </button>
+            <button class="btn btn-sm" @click="showDateInput = false">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+
       <button class="btn btn-sm" @click="nextWeek">
         Next
       </button>
