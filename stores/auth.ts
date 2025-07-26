@@ -2,7 +2,6 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 type LoginResponse = { access_token: string };
-type MeResponse = { id: string; email: string };
 
 export const useAuthStore = defineStore("auth", () => {
   const token = useCookie<string | null>("auth_token");
@@ -22,18 +21,19 @@ export const useAuthStore = defineStore("auth", () => {
     errorMessage.value = null;
     try {
       const data = await $fetch<LoginResponse>(
-        "/auth/token",
-        { method: "POST", body: { email: username, password }, baseURL: base },
+        "/auth/login",
+        {
+          method: "POST",
+          body: new URLSearchParams({
+            username,
+            password,
+            grant_type: "password",
+          }),
+          baseURL: base,
+        },
       );
 
       token.value = data.access_token;
-
-      const me = await $fetch<MeResponse>(
-        "/auth/check",
-        { headers: { Authorization: `Bearer ${token.value}` }, baseURL: base },
-      );
-      id.value = me.id;
-      email.value = me.email;
       navigateTo("/");
     }
     catch (err: any) {
