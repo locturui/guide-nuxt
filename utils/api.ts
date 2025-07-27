@@ -6,6 +6,7 @@ export async function useApi<T>(url: string, options: any = {}): Promise<T> {
   const base = config.public.apiBase;
 
   const headers = options.headers || {};
+  headers["Content-Type"] = "application/json";
   if (auth.token) {
     headers.Authorization = `Bearer ${auth.token}`;
   }
@@ -13,7 +14,7 @@ export async function useApi<T>(url: string, options: any = {}): Promise<T> {
   try {
     return await $fetch<T>(url, {
       baseURL: base,
-      credentials: "include",
+      // credentials: "include",
       ...options,
       headers,
     });
@@ -25,7 +26,7 @@ export async function useApi<T>(url: string, options: any = {}): Promise<T> {
         headers.Authorization = `Bearer ${auth.token}`;
         return await $fetch<T>(url, {
           baseURL: base,
-          credentials: "include",
+          // credentials: "incluzde",
           ...options,
           headers,
         });

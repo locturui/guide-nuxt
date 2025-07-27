@@ -1,7 +1,14 @@
 <script setup>
 import { defineEmits, defineProps } from "vue";
 
-const props = defineProps({ start: Date, end: Date, left: Number, bookings: Array });
+const props = defineProps({
+  start: Date,
+  end: Date,
+  left: Number,
+  limit: Number,
+  bookings: Array,
+});
+
 const emits = defineEmits(["selectSlot", "selectBooking"]);
 function onSelectSlot() {
   emits("selectSlot", props.start);
@@ -27,7 +34,7 @@ function formatTime(d) {
     @click="left > 0 && onSelectSlot()"
   >
     <div class="text-sm font-medium">
-      {{ left }}/51 left
+      {{ left }}/{{ limit }} left
     </div>
     <div v-if="bookings.length" class="flex flex-col flex-1 overflow-auto mt-0.5 mb-0.5">
       <span
