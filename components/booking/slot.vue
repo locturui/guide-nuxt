@@ -28,8 +28,8 @@ function formatTime(d) {
     class="border p-2 flex flex-col justify-between h-36"
     :class="[
       left <= 0
-        ? 'border-gray-200 bg-gray-200 cursor-not-allowed text-gray-600'
-        : 'border-gray-200 hover:bg-gray-100 cursor-pointer text-gray-600',
+        ? 'border-gray-200 bg-gray-200 text-gray-600'
+        : 'border-gray-200 hover:bg-gray-100 text-gray-600',
     ]"
     @click="left > 0 && onSelectSlot()"
   >

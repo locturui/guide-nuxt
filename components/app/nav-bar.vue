@@ -42,6 +42,9 @@ function logout() {
           class="mt-3 p-2 shadow menu menu-compact dropdown-content bg-base-100 rounded-box w-52"
         >
           <li>
+            <NuxtLink to="/account" class="flex items-center">
+              Account
+            </NuxtLink>
             <button class="text-error" @click="logout">
               Logout
             </button>
