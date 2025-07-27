@@ -1,12 +1,19 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
-type LoginResponse = { access_token: string };
+type LoginResponse = {
+  access_token: string;
+  token_type: string;
+  refresh_token: string;
+  role: UserRole;
+};
+
+type UserRole = "admin" | "agent" | null;
 
 export const useAuthStore = defineStore("auth", () => {
-  const token = useCookie<string | null>("auth_token");
-  const id = useCookie<string | null>("user_id");
-  const email = useCookie<string | null>("user_email");
+  const token = useCookie<string | null>("access_token");
+  const refreshToken = useCookie<string | null>("refresh_token");
+  const role = useCookie<UserRole>("user_role");
 
   const isAuthenticating = ref(false);
   const errorMessage = ref<string | null>(null);
@@ -30,10 +37,12 @@ export const useAuthStore = defineStore("auth", () => {
             grant_type: "password",
           }),
           baseURL: base,
+          // credentials: "include",
         },
       );
 
       token.value = data.access_token;
+      role.value = data.role;
       navigateTo("/");
     }
     catch (err: any) {
@@ -65,10 +74,31 @@ export const useAuthStore = defineStore("auth", () => {
     }
   }
 
+  async function refreshTokenOnExpire() {
+    try {
+      const data = await $fetch<LoginResponse>(
+        "/auth/refresh",
+        {
+          method: "POST",
+          credentials: "include",
+          baseURL: base,
+        },
+      );
+      token.value = data.access_token;
+      role.value = data.role;
+      return true;
+    }
+    catch (err: any) {
+      errorMessage.value = err.message || "Token refresh failed";
+      logout();
+      return false;
+    }
+  }
+
   function logout() {
     token.value = null;
-    id.value = null;
-    email.value = null;
+    refreshToken.value = null;
+    role.value = null;
     errorMessage.value = null;
 
     useCookie("auth_token").value = null;
@@ -79,8 +109,7 @@ export const useAuthStore = defineStore("auth", () => {
 
   return {
     token,
-    id,
-    email,
+    role,
     isAuthenticating,
     errorMessage,
 
@@ -88,6 +117,7 @@ export const useAuthStore = defineStore("auth", () => {
 
     login,
     register,
+    refreshToken: refreshTokenOnExpire,
     logout,
   };
 });

@@ -1,12 +1,12 @@
 <script setup>
-const agents = [{ id: 101, name: "Agent A" }, { id: 102, name: "Agent B" }];
-const allBookings = ref([
-  { id: 1, date: "2025-07-14", time: "09:00", guests: 5, agentId: 101 },
-  { id: 2, date: "2025-07-14", time: "09:00", guests: 10, agentId: 102 },
-]);
+const role = useAuthStore().role;
+
+const editingSlot = ref(null);
+
+const apiTimeSlots = ref([]);
+const allBookings = ref([]);
 
 const currentAgentId = ref(101);
-const isAdmin = ref(false);
 const jumpToDate = ref("");
 const showDateInput = ref(false);
 
@@ -63,6 +63,47 @@ function formatDate(d) {
   return `${dd}.${mm}.${yyyy} - ${endDd}.${endMm}.${endYyyy}`;
 }
 
+async function fetchTimeSlots() {
+  const start = weekStart.value;
+  const dd = String(start.getDate()).padStart(2, "0");
+  const mm = String(start.getMonth() + 1).padStart(2, "0");
+  const yyyy = start.getFullYear();
+  const dateStr = `${dd}.${mm}.${yyyy}`;
+  try {
+    const result = await useApi(
+      role === "admin"
+        ? `/week/admin?date=${dateStr}`
+        : `/week/agency?date=${dateStr}`,
+    );
+
+    apiTimeSlots.value = result.days;
+  }
+  catch (err) {
+    console.error("Failed to fetch timeslots", err);
+  }
+}
+
+const slotMap = computed(() => {
+  const map = {};
+  for (const day of apiTimeSlots.value) {
+    map[day.date] = day.timeslots.reduce((acc, slot) => {
+      acc[slot.time] = slot;
+      return acc;
+    }, {});
+  }
+  return map;
+});
+
+const allTimes = computed(() => {
+  const times = new Set();
+  for (const day of apiTimeSlots.value) {
+    for (const slot of day.timeslots) {
+      times.add(slot.time);
+    }
+  }
+  return Array.from(times).sort();
+});
+
 function formatISODate(d) {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -74,20 +115,19 @@ function parseSlotDate(date, time) {
   const [h, m] = time.split(":").map(Number);
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, m);
 }
+
 function bookingsForSlot(date, time) {
-  return allBookings.value
-    .filter(b => b.date === formatISODate(date) && b.time === time)
-    .map(b => ({
-      id: b.id,
-      agentName: agents.find(a => a.id === b.agentId)?.name || "",
-      guests: b.guests,
-    }));
-}
-function remainingCapacity(date, time) {
-  const sum = allBookings.value
-    .filter(b => b.date === formatISODate(date) && b.time === time)
-    .reduce((s, b) => s + b.guests, 0);
-  return 51 - sum;
+  const dayKey = formattedDate(date);
+  const slot = slotMap.value[dayKey]?.[time];
+
+  if (!slot || !slot.bookings)
+    return [];
+
+  return slot.bookings.map(b => ({
+    id: b.id,
+    agentName: agents.find(a => a.id === Number(b.agency_id))?.name || b.agency_email || "",
+    guests: b.people_count,
+  }));
 }
 
 const selectedRemaining = computed(() => {
@@ -98,14 +138,6 @@ const selectedRemaining = computed(() => {
   return base + prev;
 });
 
-function onSelectSlot(start) {
-  formDate.value = formatISODate(start);
-  formTime.value = start.toTimeString().slice(0, 5);
-  formGuests.value = 1;
-  formAgentId.value = currentAgentId.value;
-  editingId.value = null;
-  showModal.value = true;
-}
 function onSelectBooking(b) {
   formDate.value = b.date;
   formTime.value = b.time;
@@ -137,9 +169,65 @@ function save() {
 
 onMounted(() => {
   weekStart.value = startOfWeek(new Date());
+  fetchTimeSlots();
 });
-const hours = Array.from({ length: 12 }, (_, i) => i + 9)
-  .flatMap(h => [`${String(h).padStart(2, "0")}:00`, `${String(h).padStart(2, "0")}:30`]);
+
+watch(weekStart, fetchTimeSlots);
+
+function formattedDate(d) {
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+}
+
+function onSelectSlot(start) {
+  const dateStr = formatISODate(start);
+  const timeStr = start.toTimeString().slice(0, 5);
+
+  if (role === "admin") {
+    const slot = slotMap.value[formattedDate(start)]?.[timeStr];
+    editingSlot.value = {
+      date: dateStr,
+      time_str: timeStr,
+      limit: slot ? slot.limit : 0,
+    };
+    showModal.value = true;
+    console.log(slot, "\n", apiTimeSlots.value);
+  }
+  else {
+    formDate.value = dateStr;
+    formTime.value = timeStr;
+    formGuests.value = 1;
+    formAgentId.value = currentAgentId.value;
+    editingId.value = null;
+    showModal.value = true;
+  }
+}
+
+function remainingCapacity(date, time) {
+  const dayKey = formattedDate(date);
+  return slotMap.value[dayKey]?.[time]?.remaining || 0;
+}
+
+async function saveSlotLimit() {
+  if (!editingSlot.value)
+    return;
+
+  const dayKey = formattedDate(new Date(editingSlot.value.date));
+  const timeStr = editingSlot.value.time_str;
+  const newLimit = editingSlot.value.limit;
+  const dayIndex = apiTimeSlots.value.findIndex(d => d.date === dayKey);
+  if (dayIndex !== -1) {
+    const slotIndex = apiTimeSlots.value[dayIndex].timeslots.findIndex(s => s.time === timeStr);
+    if (slotIndex !== -1) {
+      apiTimeSlots.value[dayIndex].timeslots[slotIndex].limit = newLimit;
+      apiTimeSlots.value[dayIndex].timeslots[slotIndex].remaining = newLimit;
+
+      await useApi("/days/set-timeslot-limit", { method: "POST", body: { date: editingSlot.value.date, time_str: timeStr, limit: newLimit } });
+    }
+  }
+
+  showModal.value = false;
+  editingSlot.value = null;
+}
 </script>
 
 <template>
@@ -190,16 +278,20 @@ const hours = Array.from({ length: 12 }, (_, i) => i + 9)
       >
         {{ d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}
       </div>
-      <template v-for="time in hours" :key="time">
+      <template v-for="time in allTimes" :key="time">
         <div class="text-right pr-2 text-xs text-gray-500">
           {{ time }}
         </div>
-        <div v-for="d in weekDays" :key="d + time">
+        <div
+          v-for="day in weekDays"
+          :key="formattedDate(day) + time"
+        >
           <BookingSlot
-            :start="parseSlotDate(d, time)"
-            :end="new Date(parseSlotDate(d, time).getTime() + 30 * 60000)"
-            :left="remainingCapacity(d, time)"
-            :bookings="bookingsForSlot(d, time)"
+            :start="parseSlotDate(day, time)"
+            :end="new Date(parseSlotDate(day, time).getTime() + 30 * 60000)"
+            :left="slotMap[formattedDate(day)]?.[time]?.remaining || 0"
+            :limit="slotMap[formattedDate(day)]?.[time]?.limit || 0"
+            :bookings="bookingsForSlot(day, time)"
             @select-slot="onSelectSlot"
             @select-booking="onSelectBooking"
           />
@@ -208,57 +300,106 @@ const hours = Array.from({ length: 12 }, (_, i) => i + 9)
     </div>
   </div>
 
-  <div v-if="showModal" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-    <div class="bg-gray-500 p-6 rounded-lg w-80">
-      <div class="form-control mb-2">
-        <label class="label"><span class="label-text">Date</span></label>
-        <input
-          v-model="formDate"
-          type="date"
-          class="input input-bordered"
-        >
-      </div>
-      <div class="form-control mb-2">
-        <label class="label"><span class="label-text">Time</span></label>
-        <input
-          v-model="formTime"
-          type="time"
-          min="09:00"
-          max="19:00"
-          step="1800"
-          class="input input-bordered"
-        >
-      </div>
-      <div class="form-control mb-2">
-        <label class="label"><span class="label-text">Guests (max {{ selectedRemaining }})</span></label>
-        <input
-          v-model.number="formGuests"
-          type="number"
-          :min="1"
-          :max="selectedRemaining"
-          class="input input-bordered"
-        >
-      </div>
-      <div v-if="isAdmin" class="form-control mb-2">
-        <label class="label"><span class="label-text">Agent</span></label>
-        <select v-model="formAgentId" class="select select-bordered">
-          <option
-            v-for="a in agents"
-            :key="a.id"
-            :value="a.id"
+  <div
+    v-if="showModal"
+    class="fixed inset-0 flex items-center justify-center z-40"
+    style="background-color: rgba(0,0,0,0.5);"
+    @click.self="() => { showModal = false; editingSlot = null; }"
+  >
+    <div class="bg-gray-500 dark:bg-g p-6 rounded-lg w-80 z-50 opacity-100">
+      <template v-if="role === 'admin'">
+        <div class="form-control mb-2">
+          <label class="label"><span class="label-text text-gray-300">Date</span></label>
+          <input
+            type="date"
+            :value="editingSlot?.date"
+            disabled
+            class="input input-bordered"
           >
-            {{ a.name }}
-          </option>
-        </select>
-      </div>
-      <div class="flex justify-end gap-2 mt-4">
-        <button class="btn btn-primary" @click="save">
-          Save
-        </button>
-        <button class="btn" @click="showModal = false">
-          Cancel
-        </button>
-      </div>
+        </div>
+        <div class="form-control mb-2">
+          <label class="label"><span class="label-text text-gray-300">Time</span></label>
+          <input
+            type="time"
+            :value="editingSlot?.time_str"
+            disabled
+            class="input input-bordered"
+          >
+        </div>
+        <div class="form-control mb-2">
+          <label class="label"><span class="label-text text-gray-300">Limit</span></label>
+          <input
+            v-model.number="editingSlot.limit"
+            type="number"
+            min="0"
+            class="input input-bordered"
+          >
+        </div>
+        <div class="flex justify-end gap-2 mt-4">
+          <button class="btn btn-primary" @click="saveSlotLimit">
+            Save
+          </button>
+          <button class="btn" @click="showModal = false">
+            Cancel
+          </button>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="bg-gray-500 p-6 rounded-lg w-80">
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text">Date</span></label>
+            <input
+              v-model="formDate"
+              type="date"
+              class="input input-bordered"
+            >
+          </div>
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text">Time</span></label>
+            <input
+              v-model="formTime"
+              type="time"
+              min="09:00"
+              max="19:00"
+              step="1800"
+              class="input input-bordered"
+            >
+          </div>
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text">Guests (max {{ selectedRemaining }})</span></label>
+            <input
+              v-model.number="formGuests"
+              type="number"
+              :min="1"
+              :max="selectedRemaining"
+              class="input input-bordered"
+            >
+          </div>
+          <div v-if="role === 'admin'" class="form-control mb-2">
+            <label class="label"><span class="label-text">Agent</span></label>
+            <select v-model="formAgentId" class="select select-bordered">
+              <option
+                v-for="a in agents"
+                :key="a.id"
+                :value="a.id"
+              >
+                {{ a.name }}
+              </option>
+            </select>
+          </div>
+          <div class="flex justify-end gap-2 mt-4">
+            <button class="btn btn-primary" @click="save">
+              Save
+            </button>
+            <button class="btn" @click="showModal = false">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </template>
     </div>
   </div>
+
+  <!-- <div v-if="showModal" class="fixed inset-0 flex items-center justify-center bg-gray-600 bg-opacity-50" /> -->
 </template>
