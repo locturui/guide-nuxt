@@ -34,14 +34,14 @@ function toggleDayCategoryDropdown(dateStr) {
   }
 }
 
-async function confirmDayCategory(dateStr) {
+async function confirmDayCategory(dateStr, { category, limit }) {
   try {
     await useApi("/days/set-day-category", {
       method: "POST",
       body: {
         date: dateStr.split(".").reverse().join("-"),
-        category: dayCategoryForm.category,
-        ...(dayCategoryForm.category === "Limited" && { limit: dayCategoryForm.limit }),
+        category,
+        ...(category === "Limited" && { limit }),
       },
     });
 
@@ -340,56 +340,13 @@ async function saveSlotLimit() {
           {{ d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}
         </div>
 
-        <div
+        <DayCategoryDropdown
           v-if="dayCategoryDropdown === formattedDate(d)"
-          class="absolute left-1/2 -translate-x-1/2 mt-2 bg-base-200 p-2 rounded shadow z-20 w-40 space-y-2"
-        >
-          <div>
-            <label>
-              <input
-                v-model="dayCategoryForm.category"
-                type="radio"
-                value="Open"
-              >
-              Open
-            </label>
-          </div>
-          <div>
-            <label>
-              <input
-                v-model="dayCategoryForm.category"
-                type="radio"
-                value="Closed"
-              >
-              Closed
-            </label>
-          </div>
-          <div>
-            <label>
-              <input
-                v-model="dayCategoryForm.category"
-                type="radio"
-                value="Limited"
-              >
-              Limited
-            </label>
-            <input
-              v-if="dayCategoryForm.category === 'Limited'"
-              v-model.number="dayCategoryForm.limit"
-              type="number"
-              class="input input-sm input-bordered ml-2 w-16"
-              placeholder="Limit"
-            >
-          </div>
-          <div class="flex justify-end gap-1 pt-1">
-            <button class="btn btn-xs btn-primary" @click="confirmDayCategory(formattedDate(d))">
-              Confirm
-            </button>
-            <button class="btn btn-xs" @click="dayCategoryDropdown = null">
-              Cancel
-            </button>
-          </div>
-        </div>
+          :date-str="formattedDate(d)"
+          :model-value="dayCategoryDropdown"
+          @confirm="payload => confirmDayCategory(formattedDate(d), payload)"
+          @cancel="dayCategoryDropdown = null"
+        />
       </div>
 
       <template v-for="time in allTimes" :key="time">
