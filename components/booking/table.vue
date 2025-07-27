@@ -283,7 +283,7 @@ async function saveSlotLimit() {
 </script>
 
 <template>
-  <div class="p-4 w-full overflow-x-auto">
+  <div class="p-4 w-full overflow-x-auto px-15">
     <div class="flex justify-between mb-4">
       <button class="btn btn-sm" @click="prevWeek">
         Previous
@@ -328,7 +328,14 @@ async function saveSlotLimit() {
         :key="d"
         class="text-center font-medium relative group"
       >
-        <div class="cursor-pointer underline" @click="toggleDayCategoryDropdown(formattedDate(d))">
+        <div
+          v-if="role === 'admin'"
+          class="cursor-pointer underline"
+          @click="toggleDayCategoryDropdown(formattedDate(d))"
+        >
+          {{ d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}
+        </div>
+        <div v-else>
           {{ d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}
         </div>
 

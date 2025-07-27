@@ -5,12 +5,12 @@ export default defineNuxtRouteMiddleware((to) => {
     bookings: ["admin", "agency"],
     index: [null, "admin", "agency"],
     login: [null],
+    account: ["admin", "agency"],
   };
 
   const allowedRoles = routeAccessMap[to.name as string];
 
   if (!allowedRoles) {
-    console.warn(`❌ No access rules defined for route: ${String(to.name)}`);
     return;
   }
 
@@ -19,6 +19,6 @@ export default defineNuxtRouteMiddleware((to) => {
   }
 
   if (auth.role && !allowedRoles.includes(auth.role)) {
-    return navigateTo("/unauthorized");
+    return navigateTo("/");
   }
 });

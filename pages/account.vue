@@ -3,6 +3,11 @@ import { ref } from "vue";
 
 import { useAuthStore } from "@/stores/auth";
 
+definePageMeta({
+  middleware: "auth",
+  name: "account",
+});
+
 const auth = useAuthStore();
 
 const isAdmin = auth.role === "admin";
