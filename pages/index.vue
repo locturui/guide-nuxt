@@ -1,5 +1,8 @@
 <script setup lang="ts">
 const auth = useAuthStore();
+if (auth.isAuthenticated) {
+  navigateTo("/bookings");
+}
 </script>
 
 <template>
@@ -13,7 +16,6 @@ const auth = useAuthStore();
           Это приложение позволяет бронировать слоты для экскурсий. Вы можете выбрать дату, время и количество гостей.
           Для начала работы, пожалуйста, войдите в систему.
         </p>
-        <!-- <AuthButton v-if="!authStore.user" /> -->
         <NuxtLink
           to="/bookings"
           class="btn btn-primary"
