@@ -147,9 +147,10 @@ function onSelectBooking(b) {
   showModal.value = true;
 }
 
-function save() {
+async function save() {
   if (formGuests.value > selectedRemaining.value)
     return;
+
   const booking = {
     id: editingId.value || Date.now(),
     date: formDate.value,
@@ -157,14 +158,30 @@ function save() {
     guests: formGuests.value,
     agentId: formAgentId.value,
   };
-  if (editingId.value) {
-    const i = allBookings.value.findIndex(b => b.id === editingId.value);
-    allBookings.value[i] = booking;
+
+  try {
+    await useApi("/days/book", {
+      method: "POST",
+      body: {
+        date: formDate.value,
+        time: formTime.value,
+        people_count: formGuests.value,
+      },
+    });
+
+    if (editingId.value) {
+      const i = allBookings.value.findIndex(b => b.id === editingId.value);
+      allBookings.value[i] = booking;
+    }
+    else {
+      allBookings.value.push(booking);
+    }
+
+    showModal.value = false;
   }
-  else {
-    allBookings.value.push(booking);
+  catch (err) {
+    console.error("Failed to save booking:", err);
   }
-  showModal.value = false;
 }
 
 onMounted(() => {
@@ -190,7 +207,6 @@ function onSelectSlot(start) {
       limit: slot ? slot.limit : 0,
     };
     showModal.value = true;
-    console.log(slot, "\n", apiTimeSlots.value);
   }
   else {
     formDate.value = dateStr;
@@ -346,60 +362,46 @@ async function saveSlotLimit() {
       </template>
 
       <template v-else>
-        <div class="bg-gray-500 p-6 rounded-lg w-80">
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text">Date</span></label>
-            <input
-              v-model="formDate"
-              type="date"
-              class="input input-bordered"
-            >
-          </div>
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text">Time</span></label>
-            <input
-              v-model="formTime"
-              type="time"
-              min="09:00"
-              max="19:00"
-              step="1800"
-              class="input input-bordered"
-            >
-          </div>
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text">Guests (max {{ selectedRemaining }})</span></label>
-            <input
-              v-model.number="formGuests"
-              type="number"
-              :min="1"
-              :max="selectedRemaining"
-              class="input input-bordered"
-            >
-          </div>
-          <div v-if="role === 'admin'" class="form-control mb-2">
-            <label class="label"><span class="label-text">Agent</span></label>
-            <select v-model="formAgentId" class="select select-bordered">
-              <option
-                v-for="a in agents"
-                :key="a.id"
-                :value="a.id"
-              >
-                {{ a.name }}
-              </option>
-            </select>
-          </div>
-          <div class="flex justify-end gap-2 mt-4">
-            <button class="btn btn-primary" @click="save">
-              Save
-            </button>
-            <button class="btn" @click="showModal = false">
-              Cancel
-            </button>
-          </div>
+        <div class="form-control mb-2">
+          <label class="label"><span class="label-text">Date</span></label>
+          <input
+            v-model="formDate"
+            type="date"
+            class="input input-bordered"
+            disabled
+          >
+        </div>
+        <div class="form-control mb-2">
+          <label class="label"><span class="label-text">Time</span></label>
+          <input
+            v-model="formTime"
+            type="time"
+            min="09:00"
+            max="19:00"
+            step="1800"
+            class="input input-bordered"
+            disabled
+          >
+        </div>
+        <div class="form-control mb-2">
+          <label class="label"><span class="label-text">Guests (max {{ selectedRemaining }})</span></label>
+          <input
+            v-model.number="formGuests"
+            type="number"
+            :min="1"
+            :max="selectedRemaining"
+            class="input input-bordered"
+          >
+        </div>
+        <div class="flex justify-end gap-2 mt-4">
+          <button class="btn btn-primary" @click="save">
+            Save
+          </button>
+          <button class="btn" @click="showModal = false">
+            Cancel
+          </button>
         </div>
       </template>
     </div>
   </div>
-
-  <!-- <div v-if="showModal" class="fixed inset-0 flex items-center justify-center bg-gray-600 bg-opacity-50" /> -->
 </template>

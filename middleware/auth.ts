@@ -2,8 +2,8 @@ export default defineNuxtRouteMiddleware((to) => {
   const auth = useAuthStore();
 
   const routeAccessMap: Record<string, (string | null)[]> = {
-    bookings: ["admin", "user"],
-    index: [null, "admin", "user"],
+    bookings: ["admin", "agency"],
+    index: [null, "admin", "agency"],
     login: [null],
   };
 
