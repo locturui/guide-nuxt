@@ -1,6 +1,4 @@
 <script setup>
-import { defineEmits, defineProps } from "vue";
-
 const props = defineProps({
   start: Date,
   end: Date,
@@ -10,6 +8,9 @@ const props = defineProps({
 });
 
 const emits = defineEmits(["selectSlot", "selectBooking"]);
+
+const auth = useAuthStore();
+
 function onSelectSlot() {
   emits("selectSlot", props.start);
 }
@@ -31,7 +32,9 @@ function formatTime(d) {
         ? 'border-gray-200 bg-gray-200 text-gray-600'
         : 'border-gray-200 hover:bg-gray-100 text-gray-600',
     ]"
-    @click="left > 0 && onSelectSlot()"
+    @click="() => {
+      if (left > 0 || auth.role === 'admin') onSelectSlot();
+    }"
   >
     <div class="text-sm font-medium">
       {{ left }}/{{ limit }} left
