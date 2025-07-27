@@ -17,6 +17,42 @@ const formGuests = ref(1);
 const formAgentId = ref(currentAgentId.value);
 const editingId = ref(null);
 
+const dayCategoryDropdown = ref(null);
+const dayCategoryForm = reactive({
+  category: "Open",
+  limit: 0,
+});
+
+function toggleDayCategoryDropdown(dateStr) {
+  if (dayCategoryDropdown.value === dateStr) {
+    dayCategoryDropdown.value = null;
+  }
+  else {
+    dayCategoryForm.category = null;
+    dayCategoryForm.limit = 0;
+    dayCategoryDropdown.value = dateStr;
+  }
+}
+
+async function confirmDayCategory(dateStr) {
+  try {
+    await useApi("/days/set-day-category", {
+      method: "POST",
+      body: {
+        date: dateStr.split(".").reverse().join("-"),
+        category: dayCategoryForm.category,
+        ...(dayCategoryForm.category === "Limited" && { limit: dayCategoryForm.limit }),
+      },
+    });
+
+    await fetchTimeSlots();
+    dayCategoryDropdown.value = null;
+  }
+  catch (err) {
+    console.error("Failed to set day category:", err);
+  }
+}
+
 const weekStart = ref(new Date());
 function startOfWeek(date) {
   const d = new Date(date);
@@ -290,10 +326,64 @@ async function saveSlotLimit() {
       <div
         v-for="d in weekDays"
         :key="d"
-        class="text-center font-medium"
+        class="text-center font-medium relative group"
       >
-        {{ d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}
+        <div class="cursor-pointer underline" @click="toggleDayCategoryDropdown(formattedDate(d))">
+          {{ d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}
+        </div>
+
+        <div
+          v-if="dayCategoryDropdown === formattedDate(d)"
+          class="absolute left-1/2 -translate-x-1/2 mt-2 bg-base-200 p-2 rounded shadow z-20 w-40 space-y-2"
+        >
+          <div>
+            <label>
+              <input
+                v-model="dayCategoryForm.category"
+                type="radio"
+                value="Open"
+              >
+              Open
+            </label>
+          </div>
+          <div>
+            <label>
+              <input
+                v-model="dayCategoryForm.category"
+                type="radio"
+                value="Closed"
+              >
+              Closed
+            </label>
+          </div>
+          <div>
+            <label>
+              <input
+                v-model="dayCategoryForm.category"
+                type="radio"
+                value="Limited"
+              >
+              Limited
+            </label>
+            <input
+              v-if="dayCategoryForm.category === 'Limited'"
+              v-model.number="dayCategoryForm.limit"
+              type="number"
+              class="input input-sm input-bordered ml-2 w-16"
+              placeholder="Limit"
+            >
+          </div>
+          <div class="flex justify-end gap-1 pt-1">
+            <button class="btn btn-xs btn-primary" @click="confirmDayCategory(formattedDate(d))">
+              Confirm
+            </button>
+            <button class="btn btn-xs" @click="dayCategoryDropdown = null">
+              Cancel
+            </button>
+          </div>
+        </div>
       </div>
+
       <template v-for="time in allTimes" :key="time">
         <div class="text-right pr-2 text-xs text-gray-500">
           {{ time }}
