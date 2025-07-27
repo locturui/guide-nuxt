@@ -90,8 +90,9 @@ function formatDate(d) {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
 
-  const end = new Date();
-  end.setDate(d.getDate() + 6);
+  const end = new Date(d);
+  end.setDate(end.getDate() + 6);
+
   const endYyyy = end.getFullYear();
   const endMm = String(end.getMonth() + 1).padStart(2, "0");
   const endDd = String(end.getDate()).padStart(2, "0");
