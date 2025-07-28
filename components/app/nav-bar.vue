@@ -10,7 +10,7 @@ function logout() {
 </script>
 
 <template>
-  <div class="navbar bg-base-100 shadow-md px-6">
+  <div class="navbar bg-base-100 shadow-md px-6 bg-gray-100">
     <div class="flex-1">
       <NuxtLink to="/" class="text-xl font-bold">
         207 Booking

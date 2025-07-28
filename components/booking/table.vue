@@ -1,4 +1,7 @@
 <script setup>
+import Datepicker from "@vuepic/vue-datepicker";
+import "@vuepic/vue-datepicker/dist/main.css";
+
 const role = useAuthStore().role;
 
 const editingSlot = ref(null);
@@ -415,8 +418,8 @@ function closeModal() {
 </script>
 
 <template>
-  <div class="p-4 w-full overflow-x-auto px-15">
-    <div class="flex justify-between mb-4">
+  <div class="p-4 w-full overflow-x-auto px-15 pt-5">
+    <div class="flex justify-between mb-10">
       <button class="btn btn-sm" @click="prevWeek">
         Previous
       </button>
@@ -431,14 +434,17 @@ function closeModal() {
 
         <div
           v-if="showDateInput"
-          class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-base-200 p-2 rounded shadow z-10"
+          class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-base-200 p-4 rounded shadow z-10 w-50"
         >
-          <input
+          <Datepicker
             v-model="jumpToDate"
-            type="date"
-            class="input input-sm input-bordered"
-          >
-          <div class="flex justify-end mt-1 gap-2">
+            :calendar-only="true"
+            calendar-class="bg-white rounded shadow-lg p-2"
+            input-class="hidden"
+            format="yyyy-MM-dd"
+            :auto-apply="true"
+          />
+          <div class="flex justify-end mt-2 gap-2">
             <button class="btn btn-sm btn-primary" @click="jumpToSelectedDate">
               Go
             </button>
