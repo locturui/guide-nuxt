@@ -22,22 +22,26 @@ function formatTime(d) {
   const mm = String(d.getMinutes()).padStart(2, "0");
   return `${hh}:${mm}`;
 }
+
+const todayEnd = new Date();
+todayEnd.setHours(23, 59, 59, 999);
+const isDisabled = computed(() => props.start <= todayEnd);
 </script>
 
 <template>
   <div
     class="border border-gray-100 p-2 flex flex-col justify-between h-36 cursor-pointer transition-all duration-200 ease-in-out transform overflow-x-visible"
     :class="[
-      left <= 0
+      left <= 0 || isDisabled
         ? 'border-gray-100 bg-gray-200 text-gray-600'
         : 'border-gray-100 hover:bg-gray-100 hover:shadow-md hover:scale-105 hover:z-10 text-gray-600',
     ]"
     @click="() => {
-      if (left > 0 || auth.role === 'admin') onSelectSlot();
+      if (!isDisabled && (left > 0 || auth.role === 'admin')) onSelectSlot();
     }"
   >
     <div class="text-sm font-medium">
-      {{ left }}/{{ limit }} left
+      {{ left }}/{{ limit }} свободно
     </div>
     <div v-if="bookings.length" class="flex flex-wrap gap-1 flex-1 overflow-auto overflow-x-visible mt-1 mb-1 pr-1 relative">
       <span

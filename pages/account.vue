@@ -1,15 +1,10 @@
-<script setup>
-import { ref } from "vue";
-
-import { useAuthStore } from "@/stores/auth";
-
+<script setup lang="ts">
 definePageMeta({
   middleware: "auth",
   name: "account",
 });
 
 const auth = useAuthStore();
-
 const isAdmin = auth.role === "admin";
 
 const oldPassword = ref("");
@@ -38,8 +33,8 @@ async function changePassword() {
     oldPassword.value = "";
     newPassword.value = "";
   }
-  catch (err) {
-    passwordError.value = err?.data?.message || "Failed to change password";
+  catch (err: any) {
+    passwordError.value = err?.data?.message || "Ошибка смены пароля";
   }
 }
 
@@ -56,8 +51,8 @@ async function createAgency() {
     email.value = "";
     name.value = "";
   }
-  catch (err) {
-    agencyError.value = err?.data?.message || "Failed to create agency";
+  catch (err: any) {
+    agencyError.value = err?.data?.message || "Не удалось создать агентство";
   }
 }
 </script>
@@ -67,10 +62,10 @@ async function createAgency() {
     <div class="max-w-6xl mx-auto">
       <header class="mb-12 text-center">
         <h1 class="text-3xl font-semibold text-gray-900">
-          Account Settings
+          Настройки аккаунта
         </h1>
         <p class="text-sm text-gray-500 mt-2">
-          Manage your password{{ isAdmin ? " and agencies" : "" }} below.
+          Управляйте вашим паролем{{ isAdmin ? " и агентствами" : "" }} ниже.
         </p>
       </header>
 
@@ -79,13 +74,14 @@ async function createAgency() {
           isAdmin ? 'grid md:grid-cols-2 gap-16' : 'flex justify-center',
         ]"
       >
+        <!-- Смена пароля -->
         <section class="flex-1 space-y-6 max-w-md w-full">
           <h2 class="text-xl font-medium text-gray-800 border-b pb-2">
-            Change Password
+            Сменить пароль
           </h2>
           <div class="space-y-4">
             <div>
-              <label class="block text-sm text-gray-600 mb-1">Old Password</label>
+              <label class="block text-sm text-gray-600 mb-1">Старый пароль</label>
               <input
                 v-model="oldPassword"
                 type="password"
@@ -93,7 +89,7 @@ async function createAgency() {
               >
             </div>
             <div>
-              <label class="block text-sm text-gray-600 mb-1">New Password</label>
+              <label class="block text-sm text-gray-600 mb-1">Новый пароль</label>
               <input
                 v-model="newPassword"
                 type="password"
@@ -103,23 +99,24 @@ async function createAgency() {
           </div>
           <div class="flex items-center gap-3">
             <button class="btn btn-primary" @click="changePassword">
-              Update Password
+              Обновить пароль
             </button>
-            <span v-if="passwordSuccess" class="text-green-600 text-sm">✓ Success</span>
+            <span v-if="passwordSuccess" class="text-green-600 text-sm">✓ Успех</span>
             <span v-if="passwordError" class="text-red-600 text-sm">⚠ {{ passwordError }}</span>
           </div>
         </section>
 
+        <!-- Создание агентства (только для админа) -->
         <section
           v-if="isAdmin"
           class="flex-1 space-y-6 max-w-md w-full"
         >
           <h2 class="text-xl font-medium text-gray-800 border-b pb-2">
-            Create Agency
+            Создать агентство
           </h2>
           <div class="space-y-4">
             <div>
-              <label class="block text-sm text-gray-600 mb-1">Agency Email</label>
+              <label class="block text-sm text-gray-600 mb-1">Email агентства</label>
               <input
                 v-model="email"
                 type="email"
@@ -127,7 +124,7 @@ async function createAgency() {
               >
             </div>
             <div>
-              <label class="block text-sm text-gray-600 mb-1">Agency Name</label>
+              <label class="block text-sm text-gray-600 mb-1">Название агентства</label>
               <input
                 v-model="name"
                 type="text"
@@ -137,9 +134,9 @@ async function createAgency() {
           </div>
           <div class="flex items-center gap-3">
             <button class="btn btn-secondary" @click="createAgency">
-              Create Agency
+              Создать агентство
             </button>
-            <span v-if="agencySuccess" class="text-green-600 text-sm">✓ Success</span>
+            <span v-if="agencySuccess" class="text-green-600 text-sm">✓ Успех</span>
             <span v-if="agencyError" class="text-red-600 text-sm">⚠ {{ agencyError }}</span>
           </div>
         </section>
