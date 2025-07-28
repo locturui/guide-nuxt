@@ -126,8 +126,6 @@ async function fetchTimeSlots() {
         })),
       ),
     );
-    console.log("Fetched time slots:", apiTimeSlots.value);
-    console.log("Fetched bookings:", allBookings.value);
   }
   catch (err) {
     console.error("Failed to fetch timeslots", err);
