@@ -296,20 +296,32 @@ async function saveSlotLimit() {
   const dayKey = formattedDate(new Date(editingSlot.value.date));
   const timeStr = editingSlot.value.time_str;
   const newLimit = editingSlot.value.limit;
+
   const dayIndex = apiTimeSlots.value.findIndex(d => d.date === dayKey);
   if (dayIndex !== -1) {
-    const slotIndex = apiTimeSlots.value[dayIndex].timeslots.findIndex(s => s.time === timeStr);
+    const timeslots = apiTimeSlots.value[dayIndex].timeslots;
+    const slotIndex = timeslots.findIndex(s => s.time === timeStr);
+
     if (slotIndex !== -1) {
-      apiTimeSlots.value[dayIndex].timeslots[slotIndex].limit = newLimit;
-      apiTimeSlots.value[dayIndex].timeslots[slotIndex].remaining = newLimit;
+      const slot = timeslots[slotIndex];
+      slot.limit = newLimit;
 
-      await useApi("/days/set-timeslot-limit", { method: "POST", body: { date: editingSlot.value.date, time_str: timeStr, limit: newLimit } });
+      const totalBooked = slot.bookings?.reduce((sum, b) => sum + b.people_count, 0) || 0;
+      slot.remaining = Math.max(0, newLimit - totalBooked);
+
+      await useApi("/days/set-timeslot-limit", {
+        method: "POST",
+        body: {
+          date: editingSlot.value.date,
+          time_str: timeStr,
+          limit: newLimit,
+        },
+      });
     }
-    fetchTimeSlots();
-  }
 
-  showModal.value = false;
-  editingSlot.value = null;
+    showModal.value = false;
+    editingSlot.value = null;
+  }
 }
 
 async function saveBooking() {
