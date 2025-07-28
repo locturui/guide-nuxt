@@ -26,6 +26,13 @@ const dayCategoryForm = reactive({
   limit: 0,
 });
 
+const errors = reactive({
+  formDate: "",
+  formTime: "",
+  formGuests: "",
+  editingSlotLimit: "",
+});
+
 function toggleDayCategoryDropdown(dateStr) {
   if (dayCategoryDropdown.value === dateStr) {
     dayCategoryDropdown.value = null;
@@ -205,46 +212,27 @@ function onSelectBooking(booking) {
   formGuests.value = booking.guests;
   formAgentId.value = booking.agentId;
   editingId.value = booking.id;
-
+  clearErrors();
   showModal.value = true;
 }
 
 async function save() {
-  if (formGuests.value > selectedRemaining.value)
+  if (!validateBooking())
     return;
-
-  const booking = {
-    id: editingId.value || Date.now(),
-    date: formDate.value,
-    time: formTime.value,
-    guests: formGuests.value,
-    agentId: formAgentId.value,
-  };
-
   try {
     await useApi("/days/book", {
       method: "POST",
       body: {
         date: formDate.value,
         time: formTime.value,
-        people_count: formGuests.value,
+        people_count:
+        formGuests.value,
       },
     });
-
-    if (editingId.value) {
-      const i = allBookings.value.findIndex(b => b.id === editingId.value);
-      allBookings.value[i] = booking;
-    }
-    else {
-      allBookings.value.push(booking);
-    }
-
-    showModal.value = false;
     fetchTimeSlots();
+    closeModal();
   }
-  catch (err) {
-    console.error("Failed to save booking:", err);
-  }
+  catch (err) { console.error(err); }
 }
 
 onMounted(() => {
@@ -272,6 +260,7 @@ function onSelectSlot(start) {
       time_str: timeStr,
       limit: slot ? slot.limit : 0,
     };
+    clearErrors();
     showModal.value = true;
   }
   else {
@@ -324,38 +313,24 @@ async function saveSlotLimit() {
   }
 }
 
+function validateBooking() {
+  clearErrors();
+  if (formGuests.value < 1)
+    errors.formGuests = "Введите не меньше одного гостя";
+  else if (formGuests.value > selectedRemaining.value)
+    errors.formGuests = "Недостаточно мест для бронирования";
+  return !errors.formDate && !errors.formTime && !errors.formGuests;
+}
+
 async function saveBooking() {
-  if (formGuests.value > selectedRemaining.value)
+  if (!validateBooking())
     return;
-
   try {
-    const booking = {
-      booking_id: editingId.value,
-      people_count: formGuests.value,
-    };
-
-    await useApi("/days/modify-booking", {
-      method: "POST",
-      body: booking,
-    });
-
-    const i = allBookings.value.findIndex(b => b.id === editingId.value);
-    if (i !== -1) {
-      allBookings.value[i].guests = formGuests.value;
-    }
-
-    showModal.value = false;
-
-    formDate.value = null;
-    formTime.value = null;
-    formGuests.value = null;
-    formAgentId.value = null;
-    editingId.value = null;
+    await useApi("/days/modify-booking", { method: "POST", body: { booking_id: editingId.value, people_count: formGuests.value } });
     fetchTimeSlots();
+    closeModal();
   }
-  catch (err) {
-    console.error("Failed to modify booking:", err);
-  }
+  catch (err) { console.error(err); }
 }
 
 async function saveBookingAdmin() {
@@ -441,13 +416,20 @@ function closeModal() {
   editingId.value = null;
   editingSlot.value = null;
 }
+
+function clearErrors() {
+  errors.formDate = "";
+  errors.formTime = "";
+  errors.formGuests = "";
+  errors.editingSlotLimit = "";
+}
 </script>
 
 <template>
   <div class="p-4 w-full overflow-x-auto px-15 pt-5">
     <div class="flex justify-between mb-10">
       <button class="btn btn-sm" @click="prevWeek">
-        Previous
+        Предыдущая
       </button>
 
       <div class="relative">
@@ -464,25 +446,26 @@ function closeModal() {
         >
           <Datepicker
             v-model="jumpToDate"
+            locale="ru"
             :calendar-only="true"
             calendar-class="bg-white rounded shadow-lg p-2"
             input-class="hidden"
-            format="yyyy-MM-dd"
+            format="dd.MM.yyyy"
             :auto-apply="true"
           />
           <div class="flex justify-end mt-2 gap-2">
             <button class="btn btn-sm btn-primary" @click="jumpToSelectedDate">
-              Go
+              Перейти
             </button>
             <button class="btn btn-sm" @click="showDateInput = false">
-              Cancel
+              Отмена
             </button>
           </div>
         </div>
       </div>
 
       <button class="btn btn-sm" @click="nextWeek">
-        Next
+        Следующая
       </button>
     </div>
     <div class="grid w-full gap-0" style="grid-template-columns:40px repeat(7, minmax(0, 1fr));">
@@ -497,10 +480,16 @@ function closeModal() {
           class="inline-block mb-2 cursor-pointer px-2 py-1 rounded-md shadow-[2px_2px_6px_#00000025] hover:shadow-[3px_3px_8px_#00000035] transition-shadow bg-white"
           @click="toggleDayCategoryDropdown(formattedDate(d))"
         >
-          {{ d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}
+          {{
+            d.toLocaleDateString('ru', { weekday: 'short', day: 'numeric', month: 'short' })
+              .replace(/^./, c => c.toUpperCase())
+          }}
         </div>
         <div v-else>
-          {{ d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}
+          {{
+            d.toLocaleDateString('ru', { weekday: 'short', day: 'numeric', month: 'short' })
+              .replace(/^./, c => c.toUpperCase())
+          }}
         </div>
         <transition name="modal-fade">
           <DayCategoryDropdown
@@ -542,183 +531,105 @@ function closeModal() {
     />
   </transition>
   <transition name="modal-fade">
-    <div
-      v-if="showModal"
-      class="fixed inset-0 flex items-center justify-center z-50"
-      @click.self="closeModal"
-    >
-      <div class="bg-gray-200 dark:bg-g p-6 rounded-lg w-80 opacity-100">
+    <div v-if="showModal" class="fixed inset-0 flex items-center justify-center z-50">
+      <div class="bg-white p-6 rounded-lg w-80">
         <template v-if="role === 'admin' && !editingId">
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text text-gray-300">Date</span></label>
-            <input
-              type="date"
-              :value="editingSlot?.date"
-              disabled
-              class="input input-bordered"
-            >
+          <h3 class="font-bold mb-2">
+            Задать лимит гостей для слота
+          </h3>
+          <label>Дата</label>
+          <input
+            type="date"
+            lang="ru"
+            :value="editingSlot.date"
+            disabled
+            class="input"
+          >
+          <label>Время</label>
+          <input
+            type="time"
+            lang="ru"
+            :value="editingSlot.time_str"
+            disabled
+            class="input"
+          >
+          <label>Лимит гостей</label>
+          <input
+            v-model.number="editingSlot.limit"
+            type="number"
+            class="input"
+          >
+          <div v-if="errors.editingSlotLimit" class="text-red-600 text-sm mb-2">
+            {{ errors.editingSlotLimit }}
           </div>
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text text-gray-300">Time</span></label>
-            <input
-              type="time"
-              :value="editingSlot?.time_str"
-              disabled
-              class="input input-bordered"
-            >
-          </div>
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text text-gray-300">Limit</span></label>
-            <input
-              v-model.number="editingSlot.limit"
-              type="number"
-              min="0"
-              class="input input-bordered"
-            >
-          </div>
-          <div class="flex justify-end gap-2 mt-4">
-            <button class="btn btn-primary" @click="saveSlotLimit">
-              Save
+          <div class="flex justify-end space-x-2 mt-4">
+            <button class="btn btn-sm btn-primary" @click="saveSlotLimit">
+              Сохранить
             </button>
-            <button class="btn" @click="closeModal">
-              Cancel
-            </button>
-          </div>
-        </template>
-
-        <template v-else-if="role === 'admin' && editingId">
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text">Date</span></label>
-            <input
-              v-model="formDate"
-              type="date"
-              class="input input-bordered"
-            >
-          </div>
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text">Time</span></label>
-            <input
-              v-model="formTime"
-              type="time"
-              min="09:00"
-              max="19:00"
-              step="1800"
-              class="input input-bordered"
-            >
-          </div>
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text">Guests (max {{ selectedRemaining }})</span></label>
-            <input
-              v-model.number="formGuests"
-              type="number"
-              :min="1"
-              :max="selectedRemaining"
-              class="input input-bordered"
-            >
-          </div>
-          <div class="flex justify-end gap-2 mt-4">
-            <button class="btn btn-error" @click="deleteBookingAdmin">
-              Delete
-            </button>
-            <button class="btn btn-primary" @click="saveBookingAdmin">
-              Save
-            </button>
-            <button class="btn" @click="closeModal">
-              Cancel
-            </button>
-          </div>
-        </template>
-
-        <template v-else-if="!editingId">
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text">Date</span></label>
-            <input
-              v-model="formDate"
-              type="date"
-              class="input input-bordered"
-              disabled
-            >
-          </div>
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text">Time</span></label>
-            <input
-              v-model="formTime"
-              type="time"
-              min="09:00"
-              max="19:00"
-              step="1800"
-              class="input input-bordered"
-              disabled
-            >
-          </div>
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text">Guests (max {{ selectedRemaining }})</span></label>
-            <input
-              v-model.number="formGuests"
-              type="number"
-              :min="1"
-              :max="selectedRemaining"
-              class="input input-bordered"
-            >
-          </div>
-          <div class="flex justify-end gap-2 mt-4">
-            <button class="btn btn-primary" @click="save">
-              Save
-            </button>
-            <button class="btn" @click="closeModal">
-              Cancel
+            <button class="btn btn-sm" @click="closeModal">
+              Отмена
             </button>
           </div>
         </template>
 
         <template v-else>
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text">Date</span></label>
-            <input
-              v-model="formDate"
-              type="date"
-              class="input input-bordered"
-              disabled
-            >
+          <h3 class="font-bold mb-2">
+            {{ editingId ? 'Изменить бронирование' : 'Новое бронирование' }}
+          </h3>
+
+          <label>Дата</label>
+          <input
+            v-model="formDate"
+            type="date"
+            lang="ru"
+            class="input mb-1"
+          >
+          <div v-if="errors.formDate" class="text-red-600 text-sm mb-2">
+            {{ errors.formDate }}
           </div>
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text">Time</span></label>
-            <input
-              v-model="formTime"
-              type="time"
-              min="09:00"
-              max="19:00"
-              step="1800"
-              class="input input-bordered"
-              disabled
-            >
+
+          <label>Время</label>
+          <input
+            v-model="formTime"
+            type="time"
+            lang="ru"
+            class="input mb-1"
+          >
+          <div v-if="errors.formTime" class="text-red-600 text-sm mb-2">
+            {{ errors.formTime }}
           </div>
-          <div class="form-control mb-2">
-            <label class="label"><span class="label-text">Guests (max {{ selectedRemaining }})</span></label>
-            <input
-              v-model.number="formGuests"
-              type="number"
-              :min="1"
-              :max="selectedRemaining"
-              class="input input-bordered"
-            >
+
+          <label>Количество гостей (макс. {{ selectedRemaining }})</label>
+          <input
+            v-model.number="formGuests"
+            type="number"
+            min="1"
+            :max="selectedRemaining"
+            class="input mb-1"
+          >
+          <div v-if="errors.formGuests" class="text-red-600 text-sm mb-2">
+            {{ errors.formGuests }}
           </div>
-          <div class="flex justify-end gap-2 mt-4">
-            <button class="btn btn-error" @click="deleteBooking">
-              Delete
+
+          <div class="flex justify-end space-x-2 mt-4">
+            <button
+              v-if="editingId"
+              class="btn btn-sm btn-error"
+              @click="role === 'admin' ? deleteBookingAdmin() : deleteBooking()"
+            >
+              Удалить
             </button>
-            <button class="btn btn-primary" @click="saveBooking">
-              Save
+            <button class="btn btn-sm btn-primary" @click="role === 'admin' && editingId ? saveBookingAdmin() : editingId ? saveBooking() : save()">
+              Сохранить
             </button>
-            <button class="btn" @click="closeModal">
-              Cancel
+            <button class="btn btn-sm" @click="closeModal">
+              Отменить
             </button>
           </div>
         </template>
       </div>
     </div>
   </transition>
-  <transition name="modal-fade" />
 </template>
 
 <style scoped>
