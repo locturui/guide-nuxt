@@ -39,7 +39,7 @@ async function confirmDayCategory(dateStr, { category, limit }) {
     await useApi("/days/set-day-category", {
       method: "POST",
       body: {
-        date: dateStr.split(".").reverse().join("-"),
+        date: dateStr,
         category,
         ...(category === "Limited" && { limit }),
       },
@@ -101,11 +101,7 @@ function formatDate(d) {
 }
 
 async function fetchTimeSlots() {
-  const start = weekStart.value;
-  const dd = String(start.getDate()).padStart(2, "0");
-  const mm = String(start.getMonth() + 1).padStart(2, "0");
-  const yyyy = start.getFullYear();
-  const dateStr = `${dd}.${mm}.${yyyy}`;
+  const dateStr = formattedDate(weekStart.value);
   try {
     const result = await useApi(
       role === "admin"
@@ -113,7 +109,22 @@ async function fetchTimeSlots() {
         : `/week/agency?date=${dateStr}`,
     );
 
-    apiTimeSlots.value = result.days;
+    apiTimeSlots.value = result;
+
+    allBookings.value = result.flatMap(day =>
+      day.timeslots.flatMap(slot =>
+        slot.bookings.map(b => ({
+          id: b.id,
+          date: day.date,
+          time: slot.time,
+          guests: b.people_count,
+          agentId: b.agency_id,
+          agentName: b.agency_name,
+        })),
+      ),
+    );
+    console.log("Fetched time slots:", apiTimeSlots.value);
+    console.log("Fetched bookings:", allBookings.value);
   }
   catch (err) {
     console.error("Failed to fetch timeslots", err);
@@ -162,7 +173,7 @@ function bookingsForSlot(date, time) {
 
   return slot.bookings.map(b => ({
     id: b.id,
-    agentName: agents.find(a => a.id === Number(b.agency_id))?.name || b.agency_email || "",
+    agentName: b.agency_name,
     guests: b.people_count,
   }));
 }
@@ -170,17 +181,30 @@ function bookingsForSlot(date, time) {
 const selectedRemaining = computed(() => {
   if (!formDate.value || !formTime.value)
     return 0;
+
   const base = remainingCapacity(new Date(formDate.value), formTime.value);
-  const prev = editingId.value ? allBookings.value.find(b => b.id === editingId.value)?.guests || 0 : 0;
-  return base + prev;
+
+  if (editingId.value) {
+    const editing = allBookings.value.find(b => b.id === editingId.value);
+    if (
+      editing
+      && editing.date === formDate.value
+      && editing.time === formTime.value
+    ) {
+      return base + editing.guests;
+    }
+  }
+
+  return base;
 });
 
-function onSelectBooking(b) {
-  formDate.value = b.date;
-  formTime.value = b.time;
-  formGuests.value = b.guests;
-  formAgentId.value = agents.find(a => a.name === b.agentName)?.id || currentAgentId.value;
-  editingId.value = b.id;
+function onSelectBooking(booking) {
+  formDate.value = booking.date;
+  formTime.value = booking.time;
+  formGuests.value = booking.guests;
+  formAgentId.value = booking.agentId;
+  editingId.value = booking.id;
+
   showModal.value = true;
 }
 
@@ -215,6 +239,7 @@ async function save() {
     }
 
     showModal.value = false;
+    fetchTimeSlots();
   }
   catch (err) {
     console.error("Failed to save booking:", err);
@@ -229,7 +254,10 @@ onMounted(() => {
 watch(weekStart, fetchTimeSlots);
 
 function formattedDate(d) {
-  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function onSelectSlot(start) {
@@ -281,6 +309,109 @@ async function saveSlotLimit() {
   showModal.value = false;
   editingSlot.value = null;
 }
+
+async function saveBooking() {
+  if (formGuests.value > selectedRemaining.value)
+    return;
+
+  try {
+    const booking = {
+      booking_id: editingId.value,
+      people_count: formGuests.value,
+    };
+
+    await useApi("/days/modify-booking", {
+      method: "POST",
+      body: booking,
+    });
+
+    const i = allBookings.value.findIndex(b => b.id === editingId.value);
+    if (i !== -1) {
+      allBookings.value[i].guests = formGuests.value;
+    }
+
+    showModal.value = false;
+    editingId.value = null;
+    fetchTimeSlots();
+  }
+  catch (err) {
+    console.error("Failed to modify booking:", err);
+  }
+}
+
+async function saveBookingAdmin() {
+  if (formGuests.value > selectedRemaining.value)
+    return;
+
+  try {
+    await useApi("/days/admin/modify-booking", {
+      method: "POST",
+      body: {
+        booking_id: editingId.value,
+        date: formDate.value,
+        time: formTime.value,
+        people_count: formGuests.value,
+      },
+    });
+
+    const i = allBookings.value.findIndex(b => b.id === editingId.value);
+    if (i !== -1) {
+      allBookings.value[i].guests = formGuests.value;
+    }
+
+    showModal.value = false;
+    editingId.value = null;
+    fetchTimeSlots();
+  }
+  catch (err) {
+    console.error("Failed to modify booking:", err);
+  }
+}
+
+async function deleteBooking() {
+  try {
+    const booking = {
+      booking_id: editingId.value,
+    };
+
+    await useApi("/days/cancel-booking", {
+      method: "POST",
+      body: booking,
+    });
+
+    showModal.value = false;
+    editingId.value = null;
+    fetchTimeSlots();
+  }
+  catch (err) {
+    console.error("Failed to cancel booking:", err);
+  }
+}
+
+async function deleteBookingAdmin() {
+  try {
+    const booking = {
+      booking_id: editingId.value,
+    };
+
+    await useApi("/days/admin/cancel-booking", {
+      method: "POST",
+      body: booking,
+    });
+
+    showModal.value = false;
+    editingId.value = null;
+    fetchTimeSlots();
+  }
+  catch (err) {
+    console.error("Failed to cancel booking:", err);
+  }
+}
+
+function closeModal() {
+  showModal.value = false;
+  editingSlot.value = null;
+}
 </script>
 
 <template>
@@ -292,7 +423,7 @@ async function saveSlotLimit() {
 
       <div class="relative">
         <h2
-          class="text-lg font-bold cursor-pointer underline"
+          class="font-bold cursor-pointer px-2 py-1 rounded-md shadow-[2px_2px_6px_#00000025] hover:shadow-[3px_3px_8px_#00000035] transition-shadow bg-white"
           @click="showDateInput = true"
         >
           {{ formatDate(weekStart) }}
@@ -331,7 +462,7 @@ async function saveSlotLimit() {
       >
         <div
           v-if="role === 'admin'"
-          class="cursor-pointer underline"
+          class="inline-block mb-2 cursor-pointer px-2 py-1 rounded-md shadow-[2px_2px_6px_#00000025] hover:shadow-[3px_3px_8px_#00000035] transition-shadow bg-white"
           @click="toggleDayCategoryDropdown(formattedDate(d))"
         >
           {{ d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}
@@ -339,14 +470,15 @@ async function saveSlotLimit() {
         <div v-else>
           {{ d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}
         </div>
-
-        <DayCategoryDropdown
-          v-if="dayCategoryDropdown === formattedDate(d)"
-          :date-str="formattedDate(d)"
-          :model-value="dayCategoryDropdown"
-          @confirm="payload => confirmDayCategory(formattedDate(d), payload)"
-          @cancel="dayCategoryDropdown = null"
-        />
+        <transition name="modal-fade">
+          <DayCategoryDropdown
+            v-if="dayCategoryDropdown === formattedDate(d)"
+            :date-str="formattedDate(d)"
+            :model-value="dayCategoryDropdown"
+            @confirm="payload => confirmDayCategory(formattedDate(d), payload)"
+            @cancel="dayCategoryDropdown = null"
+          />
+        </transition>
       </div>
 
       <template v-for="time in allTimes" :key="time">
@@ -370,93 +502,221 @@ async function saveSlotLimit() {
       </template>
     </div>
   </div>
+  <transition name="fade">
+    <div
+      v-if="showModal"
+      class="fixed inset-0 bg-black bg-opacity-50 z-40"
+      style="background-color: rgba(0,0,0,0.5);"
+    />
+  </transition>
+  <transition name="modal-fade">
+    <div
+      v-if="showModal"
+      class="fixed inset-0 flex items-center justify-center z-50"
+      @click.self="closeModal"
+    >
+      <div class="bg-gray-200 dark:bg-g p-6 rounded-lg w-80 opacity-100">
+        <template v-if="role === 'admin' && !editingId">
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text text-gray-300">Date</span></label>
+            <input
+              type="date"
+              :value="editingSlot?.date"
+              disabled
+              class="input input-bordered"
+            >
+          </div>
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text text-gray-300">Time</span></label>
+            <input
+              type="time"
+              :value="editingSlot?.time_str"
+              disabled
+              class="input input-bordered"
+            >
+          </div>
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text text-gray-300">Limit</span></label>
+            <input
+              v-model.number="editingSlot.limit"
+              type="number"
+              min="0"
+              class="input input-bordered"
+            >
+          </div>
+          <div class="flex justify-end gap-2 mt-4">
+            <button class="btn btn-primary" @click="saveSlotLimit">
+              Save
+            </button>
+            <button class="btn" @click="showModal = false">
+              Cancel
+            </button>
+          </div>
+        </template>
 
-  <div
-    v-if="showModal"
-    class="fixed inset-0 flex items-center justify-center z-40"
-    style="background-color: rgba(0,0,0,0.5);"
-    @click.self="() => { showModal = false; editingSlot = null; }"
-  >
-    <div class="bg-gray-500 dark:bg-g p-6 rounded-lg w-80 z-50 opacity-100">
-      <template v-if="role === 'admin'">
-        <div class="form-control mb-2">
-          <label class="label"><span class="label-text text-gray-300">Date</span></label>
-          <input
-            type="date"
-            :value="editingSlot?.date"
-            disabled
-            class="input input-bordered"
-          >
-        </div>
-        <div class="form-control mb-2">
-          <label class="label"><span class="label-text text-gray-300">Time</span></label>
-          <input
-            type="time"
-            :value="editingSlot?.time_str"
-            disabled
-            class="input input-bordered"
-          >
-        </div>
-        <div class="form-control mb-2">
-          <label class="label"><span class="label-text text-gray-300">Limit</span></label>
-          <input
-            v-model.number="editingSlot.limit"
-            type="number"
-            min="0"
-            class="input input-bordered"
-          >
-        </div>
-        <div class="flex justify-end gap-2 mt-4">
-          <button class="btn btn-primary" @click="saveSlotLimit">
-            Save
-          </button>
-          <button class="btn" @click="showModal = false">
-            Cancel
-          </button>
-        </div>
-      </template>
+        <template v-else-if="role === 'admin' && editingId">
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text">Date</span></label>
+            <input
+              v-model="formDate"
+              type="date"
+              class="input input-bordered"
+            >
+          </div>
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text">Time</span></label>
+            <input
+              v-model="formTime"
+              type="time"
+              min="09:00"
+              max="19:00"
+              step="1800"
+              class="input input-bordered"
+            >
+          </div>
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text">Guests (max {{ selectedRemaining }})</span></label>
+            <input
+              v-model.number="formGuests"
+              type="number"
+              :min="1"
+              :max="selectedRemaining"
+              class="input input-bordered"
+            >
+          </div>
+          <div class="flex justify-end gap-2 mt-4">
+            <button class="btn btn-error" @click="deleteBookingAdmin">
+              Delete
+            </button>
+            <button class="btn btn-primary" @click="saveBookingAdmin">
+              Save
+            </button>
+            <button class="btn" @click="showModal = false">
+              Cancel
+            </button>
+          </div>
+        </template>
 
-      <template v-else>
-        <div class="form-control mb-2">
-          <label class="label"><span class="label-text">Date</span></label>
-          <input
-            v-model="formDate"
-            type="date"
-            class="input input-bordered"
-            disabled
-          >
-        </div>
-        <div class="form-control mb-2">
-          <label class="label"><span class="label-text">Time</span></label>
-          <input
-            v-model="formTime"
-            type="time"
-            min="09:00"
-            max="19:00"
-            step="1800"
-            class="input input-bordered"
-            disabled
-          >
-        </div>
-        <div class="form-control mb-2">
-          <label class="label"><span class="label-text">Guests (max {{ selectedRemaining }})</span></label>
-          <input
-            v-model.number="formGuests"
-            type="number"
-            :min="1"
-            :max="selectedRemaining"
-            class="input input-bordered"
-          >
-        </div>
-        <div class="flex justify-end gap-2 mt-4">
-          <button class="btn btn-primary" @click="save">
-            Save
-          </button>
-          <button class="btn" @click="showModal = false">
-            Cancel
-          </button>
-        </div>
-      </template>
+        <template v-else-if="!editingId">
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text">Date</span></label>
+            <input
+              v-model="formDate"
+              type="date"
+              class="input input-bordered"
+              disabled
+            >
+          </div>
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text">Time</span></label>
+            <input
+              v-model="formTime"
+              type="time"
+              min="09:00"
+              max="19:00"
+              step="1800"
+              class="input input-bordered"
+              disabled
+            >
+          </div>
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text">Guests (max {{ selectedRemaining }})</span></label>
+            <input
+              v-model.number="formGuests"
+              type="number"
+              :min="1"
+              :max="selectedRemaining"
+              class="input input-bordered"
+            >
+          </div>
+          <div class="flex justify-end gap-2 mt-4">
+            <button class="btn btn-primary" @click="save">
+              Save
+            </button>
+            <button class="btn" @click="showModal = false">
+              Cancel
+            </button>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text">Date</span></label>
+            <input
+              v-model="formDate"
+              type="date"
+              class="input input-bordered"
+              disabled
+            >
+          </div>
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text">Time</span></label>
+            <input
+              v-model="formTime"
+              type="time"
+              min="09:00"
+              max="19:00"
+              step="1800"
+              class="input input-bordered"
+              disabled
+            >
+          </div>
+          <div class="form-control mb-2">
+            <label class="label"><span class="label-text">Guests (max {{ selectedRemaining }})</span></label>
+            <input
+              v-model.number="formGuests"
+              type="number"
+              :min="1"
+              :max="selectedRemaining"
+              class="input input-bordered"
+            >
+          </div>
+          <div class="flex justify-end gap-2 mt-4">
+            <button class="btn btn-error" @click="deleteBooking">
+              Delete
+            </button>
+            <button class="btn btn-primary" @click="saveBooking">
+              Save
+            </button>
+            <button class="btn" @click="showModal = false">
+              Cancel
+            </button>
+          </div>
+        </template>
+      </div>
     </div>
-  </div>
+  </transition>
+  <transition name="modal-fade" />
 </template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+.fade-enter-to,
+.fade-leave-from {
+  opacity: 1;
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: all 0.3s ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  transform: scale(0.95);
+  opacity: 0;
+}
+
+.modal-fade-enter-to,
+.modal-fade-leave-from {
+  transform: scale(1);
+  opacity: 1;
+}
+</style>

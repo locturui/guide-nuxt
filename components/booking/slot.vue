@@ -26,11 +26,11 @@ function formatTime(d) {
 
 <template>
   <div
-    class="border p-2 flex flex-col justify-between h-36"
+    class="border border-gray-100 p-2 flex flex-col justify-between h-36 cursor-pointer transition-all duration-200 ease-in-out transform overflow-x-visible"
     :class="[
       left <= 0
-        ? 'border-gray-200 bg-gray-200 text-gray-600'
-        : 'border-gray-200 hover:bg-gray-100 text-gray-600',
+        ? 'border-gray-100 bg-gray-200 text-gray-600'
+        : 'border-gray-100 hover:bg-gray-100 hover:shadow-md hover:scale-105 hover:z-10 text-gray-600',
     ]"
     @click="() => {
       if (left > 0 || auth.role === 'admin') onSelectSlot();
@@ -39,12 +39,18 @@ function formatTime(d) {
     <div class="text-sm font-medium">
       {{ left }}/{{ limit }} left
     </div>
-    <div v-if="bookings.length" class="flex flex-col flex-1 overflow-auto mt-0.5 mb-0.5">
+    <div v-if="bookings.length" class="flex flex-wrap gap-1 flex-1 overflow-auto overflow-x-visible mt-1 mb-1 pr-1 relative">
       <span
         v-for="b in bookings"
         :key="b.id"
-        class="badge badge-primary text-xs mb-1 cursor-pointer"
-        @click.stop="onSelectBooking(b)"
+        class="badge p-1 badge-primary text-xs cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:shadow-md relative hover:z-10"
+        @click.stop="onSelectBooking({
+          id: b.id,
+          agentName: b.agentName,
+          guests: b.guests,
+          date: props.start.toISOString().split('T')[0],
+          time: formatTime(props.start),
+        })"
       >
         {{ b.agentName }} - {{ b.guests }}
       </span>

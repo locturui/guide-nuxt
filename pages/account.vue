@@ -15,6 +15,7 @@ const isAdmin = auth.role === "admin";
 const oldPassword = ref("");
 const newPassword = ref("");
 const email = ref("");
+const name = ref("");
 
 const passwordSuccess = ref(false);
 const passwordError = ref("");
@@ -49,10 +50,11 @@ async function createAgency() {
   try {
     await useApi("/users/create-agency", {
       method: "POST",
-      body: { email: email.value },
+      body: { email: email.value, agency_name: name.value },
     });
     agencySuccess.value = true;
     email.value = "";
+    name.value = "";
   }
   catch (err) {
     agencyError.value = err?.data?.message || "Failed to create agency";
@@ -62,7 +64,7 @@ async function createAgency() {
 
 <template>
   <div class="max-w-5xl mx-auto p-8 mt-20">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-50">
+    <div class="grid gap-50" :class="[isAdmin ? 'md:grid-cols-2' : 'grid-cols-1']">
       <div class="bg-white shadow rounded-xl p-6 space-y-4 ">
         <h2 class="text-xl font-semibold">
           Change Password
@@ -103,6 +105,12 @@ async function createAgency() {
           <input
             v-model="email"
             type="email"
+            class="w-full input input-bordered"
+          >
+          <label class="block text-sm font-medium mb-1">Agency Name</label>
+          <input
+            v-model="name"
+            type="text"
             class="w-full input input-bordered"
           >
         </div>
