@@ -305,6 +305,7 @@ async function saveSlotLimit() {
 
       await useApi("/days/set-timeslot-limit", { method: "POST", body: { date: editingSlot.value.date, time_str: timeStr, limit: newLimit } });
     }
+    fetchTimeSlots();
   }
 
   showModal.value = false;
