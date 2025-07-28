@@ -332,6 +332,11 @@ async function saveBooking() {
     }
 
     showModal.value = false;
+
+    formDate.value = null;
+    formTime.value = null;
+    formGuests.value = null;
+    formAgentId.value = null;
     editingId.value = null;
     fetchTimeSlots();
   }
@@ -361,6 +366,11 @@ async function saveBookingAdmin() {
     }
 
     showModal.value = false;
+    formDate.value = null;
+    formTime.value = null;
+    formGuests.value = null;
+    formAgentId.value = null;
+    editingId.value = null;
     editingId.value = null;
     fetchTimeSlots();
   }
@@ -411,6 +421,11 @@ async function deleteBookingAdmin() {
 
 function closeModal() {
   showModal.value = false;
+  formDate.value = null;
+  formTime.value = null;
+  formGuests.value = null;
+  formAgentId.value = null;
+  editingId.value = null;
   editingSlot.value = null;
 }
 </script>
@@ -552,7 +567,7 @@ function closeModal() {
             <button class="btn btn-primary" @click="saveSlotLimit">
               Save
             </button>
-            <button class="btn" @click="showModal = false">
+            <button class="btn" @click="closeModal">
               Cancel
             </button>
           </div>
@@ -595,7 +610,7 @@ function closeModal() {
             <button class="btn btn-primary" @click="saveBookingAdmin">
               Save
             </button>
-            <button class="btn" @click="showModal = false">
+            <button class="btn" @click="closeModal">
               Cancel
             </button>
           </div>
@@ -637,7 +652,7 @@ function closeModal() {
             <button class="btn btn-primary" @click="save">
               Save
             </button>
-            <button class="btn" @click="showModal = false">
+            <button class="btn" @click="closeModal">
               Cancel
             </button>
           </div>
@@ -682,7 +697,7 @@ function closeModal() {
             <button class="btn btn-primary" @click="saveBooking">
               Save
             </button>
-            <button class="btn" @click="showModal = false">
+            <button class="btn" @click="closeModal">
               Cancel
             </button>
           </div>
