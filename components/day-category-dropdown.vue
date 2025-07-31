@@ -22,7 +22,7 @@ watch(
 
 <template>
   <div
-    class="absolute left-1/2 -translate-x-1/2 mt-2 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg z-20 w-48 space-y-3 border border-gray-200 dark:border-gray-700"
+    class="absolute left-1/2 -translate-x-1/2 mt-2 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg w-48 space-y-3 border border-gray-200 dark:border-gray-700 z-60"
   >
     <label
       for="cat-open"
