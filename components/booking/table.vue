@@ -672,7 +672,7 @@ async function submitMultiLimit() {
             type="date"
             lang="ru"
             class="input mb-1"
-            :disabled="!editingId"
+            :disabled="editingId && role !== 'admin' || !editingId"
           >
           <div v-if="errors.formDate" class="text-red-600 text-sm mb-2">
             {{ errors.formDate }}
@@ -684,7 +684,7 @@ async function submitMultiLimit() {
             type="time"
             lang="ru"
             class="input mb-1"
-            :disabled="editingId"
+            :disabled="editingId && role !== 'admin' || !editingId"
           >
           <div v-if="errors.formTime" class="text-red-600 text-sm mb-2">
             {{ errors.formTime }}
@@ -704,7 +704,7 @@ async function submitMultiLimit() {
 
           <div class="flex justify-end space-x-2 mt-4">
             <button
-              v-if="!editingId"
+              v-if="editingId"
               class="btn btn-sm btn-error"
               @click="role === 'admin' ? deleteBookingAdmin() : deleteBooking()"
             >
