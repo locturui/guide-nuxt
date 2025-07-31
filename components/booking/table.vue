@@ -504,7 +504,7 @@ async function submitMultiLimit() {
 
         <div
           v-if="showDateInput"
-          class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-base-200 p-4 rounded shadow z-10 w-50"
+          class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-base-200 p-4 rounded shadow z-100 w-50"
         >
           <Datepicker
             v-model="jumpToDate"
@@ -704,7 +704,7 @@ async function submitMultiLimit() {
 
           <div class="flex justify-end space-x-2 mt-4">
             <button
-              v-if="!editingId"
+              v-if="editingId"
               class="btn btn-sm btn-error"
               @click="role === 'admin' ? deleteBookingAdmin() : deleteBooking()"
             >
