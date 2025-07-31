@@ -13,12 +13,32 @@ const currentAgentId = ref(101);
 const jumpToDate = ref("");
 const showDateInput = ref(false);
 
+const showMultiModal = ref(false);
+const multiEditLimit = ref(0);
+const multiEditError = ref("");
+
 const showModal = ref(false);
 const formDate = ref("");
 const formTime = ref("");
 const formGuests = ref(1);
 const formAgentId = ref(currentAgentId.value);
 const editingId = ref(null);
+
+const selectedSlotsMap = reactive({});
+
+const multiSelectedSlots = computed(() =>
+  Object.entries(selectedSlotsMap)
+    .filter(([_, sel]) => sel)
+    .map(([key]) => {
+      const [date, time] = key.split("|");
+      return { date, time };
+    }),
+);
+
+function toggleSelect(day, time) {
+  const key = `${day.toISOString().slice(0, 10)}|${time}`;
+  selectedSlotsMap[key] = !selectedSlotsMap[key];
+}
 
 const dayCategoryDropdown = ref(null);
 const dayCategoryForm = reactive({
@@ -423,6 +443,48 @@ function clearErrors() {
   errors.formGuests = "";
   errors.editingSlotLimit = "";
 }
+
+function cancelMulti() {
+  showMultiModal.value = false;
+  for (const key in selectedSlotsMap) {
+    selectedSlotsMap[key] = false;
+  }
+}
+
+async function submitMultiLimit() {
+  multiEditError.value = "";
+
+  const selected = multiSelectedSlots.value;
+  const limit = multiEditLimit.value;
+
+  if (limit < 0) {
+    multiEditError.value = "Лимит не может быть меньше нуля";
+    return;
+  }
+
+  if (selected.length < 2) {
+    multiEditError.value = "Не выбрано достаточно слотов для редактирования";
+    return;
+  }
+
+  const timeslots = selected.map(({ date, time }) => [date, time]);
+
+  try {
+    await useApi("/days/admin/update-timeslot-limits", {
+      method: "POST",
+      body: { limit, timeslots },
+    });
+
+    showMultiModal.value = false;
+    multiEditLimit.value = 0;
+    cancelMulti();
+    fetchTimeSlots();
+  }
+  catch (err) {
+    console.error("Ошибка при обновлении слотов:", err);
+    multiEditError.value = "Не удалось сохранить изменения. Попробуйте снова.";
+  }
+}
 </script>
 
 <template>
@@ -509,7 +571,20 @@ function clearErrors() {
         <div
           v-for="day in weekDays"
           :key="formattedDate(day) + time"
+          class="transition-colors duration-200 relative"
         >
+          <label
+            v-if="role === 'admin'"
+            class="absolute top-1 right-1 z-50"
+            style="pointer-events: auto"
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-primary checkbox-sm"
+              :checked="selectedSlotsMap[`${day.toISOString().slice(0, 10)}|${time}`]"
+              @change="toggleSelect(day, time)"
+            >
+          </label>
           <BookingSlot
             :start="parseSlotDate(day, time)"
             :end="new Date(parseSlotDate(day, time).getTime() + 30 * 60000)"
@@ -523,15 +598,29 @@ function clearErrors() {
       </template>
     </div>
   </div>
+
+  <div
+    v-if="multiSelectedSlots.length"
+    class="fixed bottom-4 right-4 z-50 flex justify-center items-center gap-2 p-3 bg-white shadow-lg rounded-lg"
+  >
+    <span class="badge badge-primary">{{ multiSelectedSlots.length }} выбрано</span>
+    <button class="btn btn-sm btn-primary" @click="showMultiModal = true">
+      Редактировать выбранные
+    </button>
+    <button class="btn btn-sm" @click="cancelMulti">
+      Отмена
+    </button>
+  </div>
+
   <transition name="fade">
     <div
-      v-if="showModal"
-      class="fixed inset-0 bg-black bg-opacity-50 z-40"
+      v-if="showModal || showMultiModal"
+      class="fixed inset-0 bg-black bg-opacity-50 z-50"
       style="background-color: rgba(0,0,0,0.5);"
     />
   </transition>
   <transition name="modal-fade">
-    <div v-if="showModal" class="fixed inset-0 flex items-center justify-center z-50">
+    <div v-if="showModal" class="fixed inset-0 flex items-center justify-center z-60">
       <div class="bg-white p-6 rounded-lg w-80">
         <template v-if="role === 'admin' && !editingId">
           <h3 class="font-bold mb-2">
@@ -583,6 +672,7 @@ function clearErrors() {
             type="date"
             lang="ru"
             class="input mb-1"
+            :disabled="!editingId"
           >
           <div v-if="errors.formDate" class="text-red-600 text-sm mb-2">
             {{ errors.formDate }}
@@ -594,6 +684,7 @@ function clearErrors() {
             type="time"
             lang="ru"
             class="input mb-1"
+            :disabled="editingId"
           >
           <div v-if="errors.formTime" class="text-red-600 text-sm mb-2">
             {{ errors.formTime }}
@@ -613,7 +704,7 @@ function clearErrors() {
 
           <div class="flex justify-end space-x-2 mt-4">
             <button
-              v-if="editingId"
+              v-if="!editingId"
               class="btn btn-sm btn-error"
               @click="role === 'admin' ? deleteBookingAdmin() : deleteBooking()"
             >
@@ -627,6 +718,47 @@ function clearErrors() {
             </button>
           </div>
         </template>
+      </div>
+    </div>
+  </transition>
+  <transition name="modal-fade">
+    <div
+      v-if="showMultiModal"
+      class="fixed inset-0 bg-opacity-50 z-60 flex items-center justify-center"
+    >
+      <div class="bg-white p-6 rounded-lg w-96">
+        <h3 class="font-bold mb-4">
+          Редактировать несколько слотов
+        </h3>
+
+        <ul class="mb-4 list-disc pl-5 text-sm">
+          <li
+            v-for="slot in multiSelectedSlots"
+            :key="`${slot.date}_${slot.time}`"
+          >
+            {{ slot.date }} {{ slot.time }}
+          </li>
+        </ul>
+
+        <label class="block mb-1 font-medium">Новый лимит гостей</label>
+        <input
+          v-model.number="multiEditLimit"
+          type="number"
+          class="input w-full mb-1"
+          min="0"
+        >
+        <div v-if="multiEditError" class="text-sm text-red-600 mb-2">
+          {{ multiEditError }}
+        </div>
+
+        <div class="flex justify-end space-x-2 mt-4">
+          <button class="btn btn-sm btn-primary" @click="submitMultiLimit">
+            Сохранить
+          </button>
+          <button class="btn btn-sm" @click="cancelMulti">
+            Отмена
+          </button>
+        </div>
       </div>
     </div>
   </transition>
