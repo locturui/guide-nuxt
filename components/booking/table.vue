@@ -293,10 +293,10 @@ function onSelectSlot(start) {
   }
 }
 
-function remainingCapacity(date, time) {
-  const dayKey = formattedDate(date);
-  return slotMap.value[dayKey]?.[time]?.remaining || 0;
-}
+// function remainingCapacity(date, time) {
+//   const dayKey = formattedDate(date);
+//   return slotMap.value[dayKey]?.[time]?.remaining || 0;
+// }
 
 async function saveSlotLimit() {
   if (!editingSlot.value)
@@ -427,16 +427,6 @@ async function deleteBookingAdmin() {
   }
 }
 
-function closeModal() {
-  showModal.value = false;
-  formDate.value = null;
-  formTime.value = null;
-  formGuests.value = null;
-  formAgentId.value = null;
-  editingId.value = null;
-  editingSlot.value = null;
-}
-
 function clearErrors() {
   errors.formDate = "";
   errors.formTime = "";
@@ -484,6 +474,67 @@ async function submitMultiLimit() {
     console.error("Ошибка при обновлении слотов:", err);
     multiEditError.value = "Не удалось сохранить изменения. Попробуйте снова.";
   }
+}
+
+const extraSlotData = reactive({});
+
+function slotKey(dateStr, timeStr) {
+  return `${dateStr}|${timeStr}`;
+}
+
+watch([formDate, formTime], async ([d, t]) => {
+  if (role !== "admin")
+    return;
+  if (!d || !t)
+    return;
+
+  const dayKey = d;
+  const key = slotKey(dayKey, t);
+
+  const inWeek = slotMap.value[dayKey]?.[t];
+  if (inWeek || extraSlotData[key])
+    return;
+
+  try {
+    const res = await useApi("/days/get-slot-data", {
+      method: "POST",
+      body: { date: d, time: t },
+    });
+
+    const limit = Number(res?.limit ?? 0);
+    const remaining = Number(
+      res?.remaining
+      ?? Math.max(0, limit - Number(res?.booked ?? res?.bookings_count ?? 0)),
+    );
+
+    extraSlotData[key] = { limit, remaining };
+  }
+  catch (e) {
+    console.error("Failed to fetch slot data for out-of-week selection", e);
+    extraSlotData[key] = { limit: 0, remaining: 0 };
+  }
+});
+
+function remainingCapacity(date, time) {
+  const dayKey = formattedDate(date);
+  const key = slotKey(dayKey, time);
+
+  if (extraSlotData[key]) {
+    return extraSlotData[key].remaining ?? 0;
+  }
+  return slotMap.value[dayKey]?.[time]?.remaining || 0;
+}
+
+function closeModal() {
+  showModal.value = false;
+  formDate.value = null;
+  formTime.value = null;
+  formGuests.value = null;
+  formAgentId.value = null;
+  editingId.value = null;
+  editingSlot.value = null;
+
+  for (const k in extraSlotData) delete extraSlotData[k];
 }
 </script>
 
