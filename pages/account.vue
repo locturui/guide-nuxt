@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAgenciesStore } from "~/stores/agencies";
+
 definePageMeta({
   middleware: "auth",
   name: "account",
@@ -55,6 +57,79 @@ async function createAgency() {
     agencyError.value = err?.data?.message || "Не удалось создать агентство";
   }
 }
+
+const agencies = useAgenciesStore();
+
+onMounted(() => {
+  if (isAdmin) {
+    agencies.fetchAgencies();
+  }
+});
+
+type EditRow = { name: string; email: string };
+const editing: Record<string, EditRow> = reactive({});
+const saving: Record<string, boolean> = reactive({});
+const rowError: Record<string, string> = reactive({});
+const rowSuccess: Record<string, string> = reactive({});
+
+function startEdit(a: { agency_id: string; name: string; email: string }) {
+  editing[a.agency_id] = { name: a.name, email: a.email };
+  rowError[a.agency_id] = "";
+  rowSuccess[a.agency_id] = "";
+}
+
+function cancelEdit(id: string) {
+  delete editing[id];
+  rowError[id] = "";
+  rowSuccess[id] = "";
+}
+
+function isValidEmail(v: string) {
+  return /^[^\s@]+@[^\s@][^\s.@]*\.[^\s@]+$/.test(v);
+}
+
+async function saveRow(a: { agency_id: string; name: string; email: string }) {
+  const id = a.agency_id;
+  const draft = editing[id];
+  if (!draft) {
+    return;
+  }
+
+  rowError[id] = "";
+  rowSuccess[id] = "";
+  saving[id] = true;
+
+  try {
+    if (!draft.name || draft.name.length > 100) {
+      throw new Error("Имя должно быть от 1 до 100 символов");
+    }
+    if (!isValidEmail(draft.email)) {
+      throw new Error("Некорректный email");
+    }
+
+    if (draft.name !== a.name) {
+      await agencies.changeAgencyName(id, draft.name);
+    }
+    if (draft.email !== a.email) {
+      await agencies.changeAgencyEmail(id, draft.email);
+    }
+
+    rowSuccess[id] = "Сохранено";
+    delete editing[id];
+  }
+  catch (e: any) {
+    rowError[id] = e?.data?.detail || e?.message || "Не удалось сохранить изменения";
+  }
+  finally {
+    saving[id] = false;
+  }
+}
+
+watch(() => agencySuccess.value, (ok) => {
+  if (ok && isAdmin) {
+    agencies.fetchAgencies();
+  }
+});
 </script>
 
 <template>
@@ -74,7 +149,6 @@ async function createAgency() {
           isAdmin ? 'grid md:grid-cols-2 gap-16' : 'flex justify-center',
         ]"
       >
-        <!-- Смена пароля -->
         <section class="flex-1 space-y-6 max-w-md w-full">
           <h2 class="text-xl font-medium text-gray-800 border-b pb-2">
             Сменить пароль
@@ -106,7 +180,6 @@ async function createAgency() {
           </div>
         </section>
 
-        <!-- Создание агентства (только для админа) -->
         <section
           v-if="isAdmin"
           class="flex-1 space-y-6 max-w-md w-full"
@@ -138,6 +211,97 @@ async function createAgency() {
             </button>
             <span v-if="agencySuccess" class="text-green-600 text-sm">✓ Успех</span>
             <span v-if="agencyError" class="text-red-600 text-sm">⚠ {{ agencyError }}</span>
+          </div>
+        </section>
+        <section v-if="isAdmin" class="mt-16">
+          <h2 class="text-xl font-medium text-gray-800 border-b pb-2 mb-4">
+            Все агентства
+          </h2>
+
+          <div v-if="agencies.loading" class="text-gray-500">
+            Загрузка…
+          </div>
+          <div v-else-if="agencies.error" class="text-red-600">
+            ⚠ {{ agencies.error }}
+          </div>
+
+          <div v-else class="space-y-3">
+            <div
+              v-for="a in agencies.items"
+              :key="a.agency_id"
+              class="bg-white rounded-lg border p-4 grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-center"
+            >
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Название</label>
+                <template v-if="editing[a.agency_id]">
+                  <input
+                    v-model="editing[a.agency_id].name"
+                    type="text"
+                    class="input input-bordered w-full"
+                    :disabled="saving[a.agency_id]"
+                  >
+                </template>
+                <template v-else>
+                  <div class="text-gray-900">
+                    {{ a.name }}
+                  </div>
+                </template>
+              </div>
+
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Email</label>
+                <template v-if="editing[a.agency_id]">
+                  <input
+                    v-model="editing[a.agency_id].email"
+                    type="email"
+                    class="input input-bordered w-full"
+                    :disabled="saving[a.agency_id]"
+                  >
+                </template>
+                <template v-else>
+                  <div class="text-gray-900 break-all">
+                    {{ a.email }}
+                  </div>
+                </template>
+              </div>
+
+              <div class="flex gap-2 justify-start md:justify-end">
+                <template v-if="editing[a.agency_id]">
+                  <button
+                    class="btn btn-sm btn-primary"
+                    :disabled="saving[a.agency_id]"
+                    @click="saveRow(a)"
+                  >
+                    {{ saving[a.agency_id] ? 'Сохранение…' : 'Сохранить' }}
+                  </button>
+                  <button
+                    class="btn btn-sm"
+                    :disabled="saving[a.agency_id]"
+                    @click="cancelEdit(a.agency_id)"
+                  >
+                    Отмена
+                  </button>
+                </template>
+                <template v-else>
+                  <button class="btn btn-sm" @click="startEdit(a)">
+                    Редактировать
+                  </button>
+                </template>
+              </div>
+
+              <div class="md:col-span-3 -mt-1">
+                <span v-if="rowSuccess[a.agency_id]" class="text-green-600 text-sm">
+                  ✓ {{ rowSuccess[a.agency_id] }}
+                </span>
+                <span v-else-if="rowError[a.agency_id]" class="text-red-600 text-sm">
+                  ⚠ {{ rowError[a.agency_id] }}
+                </span>
+              </div>
+            </div>
+
+            <div v-if="!agencies.items.length" class="text-gray-500">
+              Нет агентств.
+            </div>
           </div>
         </section>
       </div>

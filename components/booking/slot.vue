@@ -23,9 +23,51 @@ function formatTime(d) {
   return `${hh}:${mm}`;
 }
 
-const todayEnd = new Date();
-todayEnd.setHours(23, 59, 59, 999);
-const isDisabled = computed(() => props.start <= todayEnd);
+function nextHalfHour(d) {
+  const t = new Date(d);
+  t.setSeconds(0, 0);
+  const m = t.getMinutes();
+  if (m < 30) {
+    t.setMinutes(30);
+  }
+  else {
+    t.setMinutes(0);
+    t.setHours(t.getHours() + 1);
+  }
+  return t;
+}
+const nowTick = ref(Date.now());
+let _timer;
+onMounted(() => {
+  _timer = setInterval(() => {
+    nowTick.value = Date.now();
+  }, 30_000);
+});
+onBeforeUnmount(() => {
+  clearInterval(_timer);
+});
+
+const isDisabled = computed(() => {
+  if (auth.role === "admin") {
+    return false;
+  }
+
+  const now = new Date(nowTick.value);
+  const slot = props.start;
+
+  const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const slot0 = new Date(slot.getFullYear(), slot.getMonth(), slot.getDate());
+
+  if (slot0 < today0) {
+    return true;
+  }
+  if (slot0 > today0) {
+    return false;
+  }
+
+  const cutoff = nextHalfHour(now);
+  return slot < cutoff;
+});
 </script>
 
 <template>

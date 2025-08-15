@@ -37,7 +37,7 @@ export const useAuthStore = defineStore("auth", () => {
             grant_type: "password",
           }),
           baseURL: base,
-          // credentials: "include",
+          credentials: "include",
         },
       );
 
@@ -46,7 +46,7 @@ export const useAuthStore = defineStore("auth", () => {
       navigateTo("/");
     }
     catch (err: any) {
-      errorMessage.value = err.message || "Login failed";
+      errorMessage.value = err.data?.detail || err.message || "Login failed";
       throw err;
     }
     finally {
@@ -62,6 +62,7 @@ export const useAuthStore = defineStore("auth", () => {
         method: "POST",
         body: { email: username, password },
         baseURL: base,
+        credentials: "include",
       });
     }
     catch (err: any) {

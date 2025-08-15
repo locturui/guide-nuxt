@@ -14,7 +14,7 @@ export async function useApi<T>(url: string, options: any = {}): Promise<T> {
   try {
     return await $fetch<T>(url, {
       baseURL: base,
-      // credentials: "include",
+      credentials: "include",
       ...options,
       headers,
     });
@@ -26,7 +26,7 @@ export async function useApi<T>(url: string, options: any = {}): Promise<T> {
         headers.Authorization = `Bearer ${auth.token}`;
         return await $fetch<T>(url, {
           baseURL: base,
-          // credentials: "incluzde",
+          credentials: "include",
           ...options,
           headers,
         });

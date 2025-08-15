@@ -2,21 +2,9 @@
 const authStore = useAuthStore();
 const username = ref("");
 const password = ref("");
-const errorMessage = ref<string | null>(null);
 
 async function handleSubmit() {
-  errorMessage.value = null;
-  try {
-    await authStore.login(username.value, password.value);
-  }
-  catch (err: unknown) {
-    if (err && typeof err === "object" && "message" in err) {
-      errorMessage.value = (err as { message: string }).message;
-    }
-    else {
-      errorMessage.value = "Login failed";
-    }
-  }
+  await authStore.login(username.value, password.value);
 }
 </script>
 
@@ -51,8 +39,8 @@ async function handleSubmit() {
       >
         {{ authStore.isAuthenticating ? 'Авторизация...' : 'Войти' }}
       </button>
-      <p v-if="errorMessage" class="text-error mt-2">
-        {{ errorMessage }}
+      <p v-if="authStore.errorMessage" class="text-error mt-2">
+        {{ authStore.errorMessage }}
       </p>
     </form>
   </div>

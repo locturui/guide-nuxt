@@ -15,7 +15,7 @@ function logout() {
   <div class="navbar shadow-md px-6 bg-gray-100">
     <div class="flex-1">
       <NuxtLink to="/" class="text-xl font-bold">
-        207
+        Innopolis TourBooking
       </NuxtLink>
     </div>
 
