@@ -61,7 +61,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const buffer = await file.arrayBuffer();
-  const { guests, errors: parseErrors } = parseExcelFile(buffer);
+  const { guests, errors: parseErrors } = await parseExcelFile(buffer);
 
   if (parseErrors.length > 0) {
     setResponseStatus(event, 400);

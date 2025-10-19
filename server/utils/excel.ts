@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 export type GuestData = {
   name: string;
@@ -8,32 +8,47 @@ export type GuestData = {
   errors: string[];
 };
 
-export function parseExcelFile(buffer: ArrayBuffer): { guests: GuestData[]; errors: string[] } {
+export async function parseExcelFile(buffer: ArrayBuffer): Promise<{ guests: GuestData[]; errors: string[] }> {
   try {
-    const workbook = XLSX.read(buffer, { type: "array" });
-    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    const data = XLSX.utils.sheet_to_json(firstSheet);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const worksheet = workbook.worksheets[0];
+
+    if (!worksheet) {
+      return { guests: [], errors: ["Excel файл пуст или поврежден"] };
+    }
+
+    const headers = worksheet.getRow(1).values as any[];
+    const requiredColumns = ["ФИО", "Дата рождения", "Город", "Телефон"];
+    const missingCols = requiredColumns.filter(col => !headers.includes(col));
+
+    if (missingCols.length > 0) {
+      return {
+        guests: [],
+        errors: [`Excel файл должен содержать колонки: ${missingCols.join(", ")}`],
+      };
+    }
 
     const generalErrors: string[] = [];
     const guests: GuestData[] = [];
 
-    const requiredColumns = ["ФИО", "Дата рождения", "Город", "Телефон"];
-    if (data.length > 0) {
-      const firstRow = data[0] as any;
-      const missingCols = requiredColumns.filter(col => !(col in firstRow));
-      if (missingCols.length > 0) {
-        generalErrors.push(`Excel файл должен содержать колонки: ${missingCols.join(", ")}`);
-        return { guests: [], errors: generalErrors };
-      }
-    }
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1)
+        return;
 
-    for (const row of data as any[]) {
       const rowErrors: string[] = [];
+      const rowData: any = {};
 
-      const name = String(row["ФИО"] || "").trim();
-      const dateOfBirth = parseDateValue(row["Дата рождения"]);
-      const city = String(row["Город"] || "").trim();
-      const phone = normalizePhone(String(row["Телефон"] || "").trim());
+      headers.forEach((header, index) => {
+        if (header) {
+          rowData[header] = row.getCell(index).value;
+        }
+      });
+
+      const name = String(rowData["ФИО"] || "").trim();
+      const dateOfBirth = parseDateValue(rowData["Дата рождения"]);
+      const city = String(rowData["Город"] || "").trim();
+      const phone = normalizePhone(String(rowData["Телефон"] || "").trim());
 
       if (!name)
         rowErrors.push("Имя обязательно");
@@ -62,7 +77,7 @@ export function parseExcelFile(buffer: ArrayBuffer): { guests: GuestData[]; erro
         phone,
         errors: rowErrors,
       });
-    }
+    });
 
     return { guests, errors: generalErrors };
   }
@@ -79,13 +94,13 @@ function parseDateValue(val: any): string {
     return val.trim();
   }
 
-  if (typeof val === "number") {
-    const date = XLSX.SSF.parse_date_code(val);
-    return `${String(date.d).padStart(2, "0")}.${String(date.m).padStart(2, "0")}.${date.y}`;
-  }
-
   if (val instanceof Date) {
     return `${String(val.getDate()).padStart(2, "0")}.${String(val.getMonth() + 1).padStart(2, "0")}.${val.getFullYear()}`;
+  }
+
+  if (typeof val === "number") {
+    const date = new Date((val - 25569) * 86400 * 1000);
+    return `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}.${date.getFullYear()}`;
   }
 
   return String(val).trim();

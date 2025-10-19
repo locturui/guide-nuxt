@@ -28,6 +28,7 @@
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.44.6",
     "eslint": "^9.27.0",
+    "exceljs": "^4.4.0",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^7.0.9",
     "nuxt": "^3.17.6",
@@ -38,7 +39,6 @@
     "vue": "^3.5.17",
     "vue-cal": "5.0.1-rc.25",
     "vue-router": "^4.5.1",
-    "xlsx": "^0.18.5",
     "zod": "^3.25.7"
   },
   "devDependencies": {
