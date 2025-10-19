@@ -1,6 +1,6 @@
 import { formattedDate, startOfWeek } from "@/utils/date";
 
-export type BookingDTO = { id: number; people_count: number; agency_id?: number; agency_name?: string };
+export type BookingDTO = { id: number; people_count: number; agency_id?: number; agency_name?: string; status?: string; precise_time?: string };
 export type SlotDTO = { time: string; limit: number; remaining: number; bookings?: BookingDTO[] };
 export type DayDTO = { date: string; timeslots: SlotDTO[] };
 
@@ -39,6 +39,8 @@ export const useScheduleStore = defineStore("schedule", () => {
           guests: b.people_count,
           agentId: b.agency_id,
           agentName: b.agency_name,
+          status: b.status,
+          preciseTime: b.precise_time,
         })),
       ),
     ));
@@ -130,27 +132,30 @@ export const useScheduleStore = defineStore("schedule", () => {
     await fetchWeek();
   }
 
-  async function modifyBooking(bookingId: number, people: number) {
-    await useApi("/days/modify-booking", { method: "POST", body: { booking_id: bookingId, people_count: people } });
+  async function modifyBooking(bookingId: string, people: number, preciseTime?: string) {
+    const response = await useApi("/days/modify-booking", { method: "POST", body: { booking_id: bookingId, people_count: people, precise_time: preciseTime } });
     await fetchWeek();
+    return response;
   }
 
-  async function adminModifyBooking(payload: { bookingId: number; date: string; time: string; people: number }) {
-    await useApi("/days/admin/modify-booking", { method: "POST", body: {
+  async function adminModifyBooking(payload: { bookingId: string; date: string; time: string; people: number; preciseTime?: string }) {
+    const response = await useApi("/days/admin/modify-booking", { method: "POST", body: {
       booking_id: payload.bookingId,
       date: payload.date,
       time: payload.time,
       people_count: payload.people,
+      precise_time: payload.preciseTime,
     } });
     await fetchWeek();
+    return response;
   }
 
-  async function cancelBooking(bookingId: number) {
+  async function cancelBooking(bookingId: string) {
     await useApi("/days/cancel-booking", { method: "POST", body: { booking_id: bookingId } });
     await fetchWeek();
   }
 
-  async function adminCancelBooking(bookingId: number) {
+  async function adminCancelBooking(bookingId: string) {
     await useApi("/days/admin/cancel-booking", { method: "POST", body: { booking_id: bookingId } });
     await fetchWeek();
   }

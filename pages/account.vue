@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useAgenciesStore } from "~/stores/agencies";
+import { useGuidesStore } from "~/stores/guides";
 
 definePageMeta({
   middleware: "auth",
@@ -7,17 +8,23 @@ definePageMeta({
 });
 
 const auth = useAuthStore();
-const isAdmin = auth.role === "admin";
+const isAdmin = computed(() => auth.role === "admin");
+const isAgency = computed(() => auth.role !== "admin");
 
 const oldPassword = ref("");
 const newPassword = ref("");
 const email = ref("");
 const name = ref("");
+const guideLastName = ref("");
+const guideFirstName = ref("");
+const guideBadge = ref("");
 
 const passwordSuccess = ref(false);
 const passwordError = ref("");
 const agencySuccess = ref(false);
 const agencyError = ref("");
+const guideSuccess = ref(false);
+const guideError = ref("");
 
 async function changePassword() {
   passwordSuccess.value = false;
@@ -59,10 +66,20 @@ async function createAgency() {
 }
 
 const agencies = useAgenciesStore();
+const guides = useGuidesStore();
 
 onMounted(() => {
-  if (isAdmin) {
+  if (isAdmin.value) {
     agencies.fetchAgencies();
+  }
+  if (isAgency.value) {
+    guides.fetchGuides();
+  }
+});
+
+watch(() => auth.role, (role) => {
+  if (role === "agent") {
+    guides.fetchGuides();
   }
 });
 
@@ -71,6 +88,12 @@ const editing: Record<string, EditRow> = reactive({});
 const saving: Record<string, boolean> = reactive({});
 const rowError: Record<string, string> = reactive({});
 const rowSuccess: Record<string, string> = reactive({});
+
+type GuideEditRow = { name: string; lastname: string; badge_number: string };
+const guideEditing: Record<string, GuideEditRow> = reactive({});
+const guideSaving: Record<string, boolean> = reactive({});
+const guideRowError: Record<string, string> = reactive({});
+const guideRowSuccess: Record<string, string> = reactive({});
 
 function startEdit(a: { agency_id: string; name: string; email: string }) {
   editing[a.agency_id] = { name: a.name, email: a.email };
@@ -125,11 +148,107 @@ async function saveRow(a: { agency_id: string; name: string; email: string }) {
   }
 }
 
+async function deleteAgency(id: string) {
+  rowError[id] = "";
+  rowSuccess[id] = "";
+  try {
+    await agencies.removeAgency(id);
+    rowSuccess[id] = "Удалено";
+  }
+  catch (e: any) {
+    rowError[id] = e?.data?.detail || e?.message || "Не удалось удалить агентство";
+  }
+}
+
 watch(() => agencySuccess.value, (ok) => {
-  if (ok && isAdmin) {
+  if (ok && isAdmin.value) {
     agencies.fetchAgencies();
   }
 });
+
+function startGuideEdit(g: { id: string; name: string; lastname: string; badge_number: string }) {
+  guideEditing[g.id] = { name: g.name, lastname: g.lastname, badge_number: g.badge_number };
+  guideRowError[g.id] = "";
+  guideRowSuccess[g.id] = "";
+}
+
+function cancelGuideEdit(id: string) {
+  delete guideEditing[id];
+  guideRowError[id] = "";
+  guideRowSuccess[id] = "";
+}
+
+async function saveGuideRow(g: { id: string; name: string; lastname: string; badge_number: string }) {
+  const id = g.id;
+  const draft = guideEditing[id];
+  if (!draft) {
+    return;
+  }
+  guideRowError[id] = "";
+  guideRowSuccess[id] = "";
+  guideSaving[id] = true;
+  try {
+    if (!draft.name || draft.name.length > 100) {
+      throw new Error("Имя должно быть от 1 до 100 символов");
+    }
+    if (!draft.lastname || draft.lastname.length > 100) {
+      throw new Error("Фамилия должна быть от 1 до 100 символов");
+    }
+    if (!draft.badge_number || draft.badge_number.length > 100) {
+      throw new Error("Номер бейджа обязателен и до 100 символов");
+    }
+    if (draft.name !== g.name || draft.lastname !== g.lastname || draft.badge_number !== g.badge_number) {
+      await guides.updateGuide(id, draft.name, draft.lastname, draft.badge_number);
+    }
+    guideRowSuccess[id] = "Сохранено";
+    delete guideEditing[id];
+  }
+  catch (e: any) {
+    guideRowError[id] = e?.data?.detail || e?.message || "Не удалось сохранить изменения";
+  }
+  finally {
+    guideSaving[id] = false;
+  }
+}
+
+async function createGuide() {
+  guideSuccess.value = false;
+  guideError.value = "";
+  try {
+    const firstName = guideFirstName.value.trim();
+    const lastName = guideLastName.value.trim();
+
+    if (!firstName || firstName.length > 100) {
+      throw new Error("Имя должно быть от 1 до 100 символов");
+    }
+    if (!lastName || lastName.length > 100) {
+      throw new Error("Фамилия должна быть от 1 до 100 символов");
+    }
+    if (!guideBadge.value || guideBadge.value.length > 100) {
+      throw new Error("Номер бейджа обязателен и до 100 символов");
+    }
+    await guides.createGuide(firstName, lastName, guideBadge.value);
+    guideSuccess.value = true;
+    guideLastName.value = "";
+    guideFirstName.value = "";
+    guideBadge.value = "";
+  }
+  catch (e: any) {
+    guideError.value = e?.data?.detail || e?.message || "Не удалось создать гида";
+  }
+}
+
+async function deleteGuide(id: string) {
+  guideRowError[id] = "";
+  guideRowSuccess[id] = "";
+  try {
+    await guides.deleteGuide(id);
+    guideRowSuccess[id] = "Удалено";
+  }
+  catch (e: any) {
+    guideRowError[id] = e?.data?.detail || e?.message || "Не удалось удалить гида";
+  }
+}
 </script>
 
 <template>
@@ -144,11 +263,7 @@ watch(() => agencySuccess.value, (ok) => {
         </p>
       </header>
 
-      <div
-        :class="[
-          isAdmin ? 'grid md:grid-cols-2 gap-16' : 'flex justify-center',
-        ]"
-      >
+      <div class="grid md:grid-cols-2 gap-16">
         <section class="flex-1 space-y-6 max-w-md w-full">
           <h2 class="text-xl font-medium text-gray-800 border-b pb-2">
             Сменить пароль
@@ -286,6 +401,9 @@ watch(() => agencySuccess.value, (ok) => {
                   <button class="btn btn-sm" @click="startEdit(a)">
                     Редактировать
                   </button>
+                  <button class="btn btn-sm btn-error" @click="deleteAgency(a.agency_id)">
+                    Удалить
+                  </button>
                 </template>
               </div>
 
@@ -301,6 +419,157 @@ watch(() => agencySuccess.value, (ok) => {
 
             <div v-if="!agencies.items.length" class="text-gray-500">
               Нет агентств.
+            </div>
+          </div>
+        </section>
+
+        <section v-if="isAgency" class="md:col-span-2">
+          <h2 class="text-xl font-medium text-gray-800 border-b pb-2 mb-4">
+            Гиды агентства
+          </h2>
+
+          <div class="grid md:grid-cols-2 gap-8">
+            <div class="space-y-4 max-w-md w-full">
+              <h3 class="text-lg font-medium">
+                Добавить гида
+              </h3>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm text-gray-600 mb-1">Фамилия</label>
+                  <input
+                    v-model="guideLastName"
+                    type="text"
+                    class="input input-bordered w-full"
+                    placeholder="Фамилия"
+                  >
+                </div>
+                <div>
+                  <label class="block text-sm text-gray-600 mb-1">Имя</label>
+                  <input
+                    v-model="guideFirstName"
+                    type="text"
+                    class="input input-bordered w-full"
+                    placeholder="Имя"
+                  >
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm text-gray-600 mb-1">Номер бейджа</label>
+                <input
+                  v-model="guideBadge"
+                  type="text"
+                  class="input input-bordered w-full"
+                >
+              </div>
+              <div class="flex items-center gap-3">
+                <button class="btn btn-secondary" @click="createGuide">
+                  Добавить
+                </button>
+                <span v-if="guideSuccess" class="text-green-600 text-sm">✓ Успех</span>
+                <span v-if="guideError" class="text-red-600 text-sm">⚠ {{ guideError }}</span>
+              </div>
+            </div>
+
+            <div>
+              <div v-if="guides.loading" class="text-gray-500">
+                Загрузка…
+              </div>
+              <div v-else-if="guides.error" class="text-red-600">
+                ⚠ {{ guides.error }}
+              </div>
+              <div v-else class="space-y-3">
+                <div
+                  v-for="g in guides.items"
+                  :key="g.id"
+                  class="bg-white rounded-lg border p-4 grid gap-3"
+                >
+                  <template v-if="guideEditing[g.id]">
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-xs text-gray-500 mb-1">Фамилия</label>
+                        <input
+                          v-model="guideEditing[g.id].lastname"
+                          type="text"
+                          class="input input-bordered w-full"
+                          :disabled="guideSaving[g.id]"
+                        >
+                      </div>
+                      <div>
+                        <label class="block text-xs text-gray-500 mb-1">Имя</label>
+                        <input
+                          v-model="guideEditing[g.id].name"
+                          type="text"
+                          class="input input-bordered w-full"
+                          :disabled="guideSaving[g.id]"
+                        >
+                      </div>
+                    </div>
+                    <div>
+                      <label class="block text-xs text-gray-500 mb-1">Бейдж</label>
+                      <input
+                        v-model="guideEditing[g.id].badge_number"
+                        type="text"
+                        class="input input-bordered w-full"
+                        :disabled="guideSaving[g.id]"
+                      >
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div>
+                      <label class="block text-xs text-gray-500 mb-1">ФИО</label>
+                      <div class="text-gray-900">
+                        {{ g.lastname }} {{ g.name }}
+                      </div>
+                    </div>
+                    <div>
+                      <label class="block text-xs text-gray-500 mb-1">Бейдж</label>
+                      <div class="text-gray-900 break-all">
+                        {{ g.badge_number }}
+                      </div>
+                    </div>
+                  </template>
+
+                  <div class="flex gap-2 justify-start md:justify-end">
+                    <template v-if="guideEditing[g.id]">
+                      <button
+                        class="btn btn-sm btn-primary"
+                        :disabled="guideSaving[g.id]"
+                        @click="saveGuideRow(g)"
+                      >
+                        {{ guideSaving[g.id] ? 'Сохранение…' : 'Сохранить' }}
+                      </button>
+                      <button
+                        class="btn btn-sm"
+                        :disabled="guideSaving[g.id]"
+                        @click="cancelGuideEdit(g.id)"
+                      >
+                        Отмена
+                      </button>
+                    </template>
+                    <template v-else>
+                      <button class="btn btn-sm" @click="startGuideEdit(g)">
+                        Редактировать
+                      </button>
+                      <button class="btn btn-sm btn-error" @click="deleteGuide(g.id)">
+                        Удалить
+                      </button>
+                    </template>
+                  </div>
+
+                  <div class="md:col-span-3 -mt-1">
+                    <span v-if="guideRowSuccess[g.id]" class="text-green-600 text-sm">
+                      ✓ {{ guideRowSuccess[g.id] }}
+                    </span>
+                    <span v-else-if="guideRowError[g.id]" class="text-red-600 text-sm">
+                      ⚠ {{ guideRowError[g.id] }}
+                    </span>
+                  </div>
+                </div>
+
+                <div v-if="!guides.items.length" class="text-gray-500">
+                  Нет гидов.
+                </div>
+              </div>
             </div>
           </div>
         </section>

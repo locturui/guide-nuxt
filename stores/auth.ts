@@ -16,6 +16,7 @@ export const useAuthStore = defineStore("auth", () => {
   const role = useCookie<UserRole>("user_role");
 
   const isAuthenticating = ref(false);
+  const isRefreshing = ref(false);
   const errorMessage = ref<string | null>(null);
 
   const isAuthenticated = computed(() => !!token.value);
@@ -42,6 +43,7 @@ export const useAuthStore = defineStore("auth", () => {
       );
 
       token.value = data.access_token;
+      refreshToken.value = data.refresh_token;
       role.value = data.role;
       navigateTo("/");
     }
@@ -76,23 +78,48 @@ export const useAuthStore = defineStore("auth", () => {
   }
 
   async function refreshTokenOnExpire() {
+    if (isRefreshing.value) {
+      // Wait for ongoing refresh to complete
+      while (isRefreshing.value) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return !!token.value;
+    }
+
+    if (!refreshToken.value) {
+      logout();
+      return false;
+    }
+
+    isRefreshing.value = true;
     try {
       const data = await $fetch<LoginResponse>(
         "/auth/refresh",
         {
           method: "POST",
-          credentials: "include",
+          body: new URLSearchParams({
+            refresh_token: refreshToken.value,
+            grant_type: "refresh_token",
+          }),
           baseURL: base,
+          credentials: "include",
         },
       );
       token.value = data.access_token;
+      refreshToken.value = data.refresh_token;
       role.value = data.role;
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
       return true;
     }
     catch (err: any) {
-      errorMessage.value = err.message || "Token refresh failed";
+      errorMessage.value = err.data?.detail || err.message || "Token refresh failed";
       logout();
       return false;
+    }
+    finally {
+      isRefreshing.value = false;
     }
   }
 
@@ -102,6 +129,9 @@ export const useAuthStore = defineStore("auth", () => {
     role.value = null;
     errorMessage.value = null;
 
+    useCookie("access_token").value = null;
+    useCookie("refresh_token").value = null;
+    useCookie("user_role").value = null;
     useCookie("auth_token").value = null;
     useCookie("user_id").value = null;
     useCookie("user_email").value = null;

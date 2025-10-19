@@ -10,16 +10,13 @@ export default defineNuxtConfig({
     plugins: [
       tailwindcss(),
     ],
-    define: {
-      __VUE_PROD_DEVTOOLS__: true,
-    },
   },
   runtimeConfig: {
     public: {
       // eslint-disable-next-line node/no-process-env
-      nodeEnv: process.env.NODE_ENV,
+      nodeEnv: process.env.NODE_ENV || "development",
       // eslint-disable-next-line node/no-process-env
-      apiBase: process.env.BASE_URL,
+      apiBase: process.env.BASE_URL || (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:8000"),
     },
   },
 });

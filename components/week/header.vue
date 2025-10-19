@@ -10,6 +10,15 @@ const emit = defineEmits(["jump", "prev", "next"]);
 const show = ref(false);
 const jump = ref(null);
 
+onMounted(() => {
+  const element = document.querySelector("[data-week-header]");
+  if (element) {
+    element.addEventListener("close-datepicker", () => {
+      show.value = false;
+    });
+  }
+});
+
 const rangeTitle = computed(() => formatRangeTitle(props.weekStart));
 
 function jumpTo() {
@@ -22,7 +31,7 @@ function jumpTo() {
 </script>
 
 <template>
-  <div class="flex justify-between mb-10">
+  <div class="flex justify-between mb-10" data-week-header>
     <button class="btn btn-sm" @click="$emit('prev')">
       Предыдущая
     </button>
@@ -37,7 +46,7 @@ function jumpTo() {
 
       <div
         v-if="show"
-        class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-base-200 p-4 rounded shadow z-100 w-50"
+        class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-base-200 p-4 rounded shadow z-50 w-50"
       >
         <Datepicker
           v-model="jump"
@@ -47,6 +56,7 @@ function jumpTo() {
           input-class="hidden"
           format="dd.MM.yyyy"
           :auto-apply="true"
+          :close-on-auto-apply="true"
         />
         <div class="flex justify-end mt-2 gap-2">
           <button class="btn btn-sm btn-primary" @click="jumpTo">

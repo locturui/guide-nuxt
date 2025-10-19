@@ -22,9 +22,11 @@ const bookings = computed(() =>
   (cell.value?.bookings || []).map(b => ({
     id: b.id,
     agentName: b.agency_name,
+    agentId: b.agency_id,
     guests: b.people_count,
     date: dateStr.value,
     time: props.time,
+    status: b.status,
   })),
 );
 

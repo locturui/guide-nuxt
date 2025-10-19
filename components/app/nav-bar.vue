@@ -2,9 +2,42 @@
 import { ref } from "vue";
 
 import { useAuthStore } from "~/stores/auth";
+import { useApi } from "~/utils/api";
+
+type MeResponse = {
+  id: string;
+  email: string;
+  agency_name: string;
+};
 
 const auth = useAuthStore();
 const open = ref(false);
+const agencyName = ref<string | null>(null);
+
+async function loadAgencyName() {
+  if (!auth.isAuthenticated || auth.role === "admin") {
+    return;
+  }
+  try {
+    const data = await useApi<MeResponse>("/users/my");
+    agencyName.value = data.agency_name || null;
+  }
+  catch {
+    agencyName.value = null;
+  }
+}
+
+onMounted(() => {
+  loadAgencyName();
+});
+
+watch(
+  () => [auth.isAuthenticated, auth.role] as const,
+  () => {
+    loadAgencyName();
+  },
+  { immediate: false },
+);
 
 function logout() {
   auth.logout();
@@ -23,7 +56,7 @@ function logout() {
       <div class="dropdown dropdown-end">
         <button class="btn btn-ghost" @click="open = !open">
           <span class="ml-4 font-medium">
-            {{ auth.role === 'admin' ? 'Администратор' : 'Агентство' }}
+            {{ auth.role === 'admin' ? 'Администратор' : (agencyName || 'Агентство') }}
           </span>
           <svg
             xmlns="http://www.w3.org/2000/svg"

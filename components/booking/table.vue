@@ -1,13 +1,35 @@
 <script setup lang="ts">
 import { useAuthStore } from "~/stores/auth";
+import { useGuestListsStore } from "~/stores/guest-lists";
 import { useScheduleStore } from "~/stores/schedule";
 import { formattedDate, startOfWeek } from "~/utils/date";
 
 const role = useAuthStore().role as unknown as "admin" | "agency";
 const s = useScheduleStore();
+const gl = useGuestListsStore();
 
-onMounted(() => {
-  s.setWeekStart(new Date());
+onMounted(async () => {
+  await s.setWeekStart(new Date());
+  const initialBookings = s.allBookings;
+  if (initialBookings.length) {
+    const bookingsWithGuestLists = initialBookings.filter(b => b.status === "filled" || b.status === "assigned");
+    if (bookingsWithGuestLists.length) {
+      await Promise.all(bookingsWithGuestLists.map(b => gl.fetchByBooking(b.id)));
+    }
+  }
+  watch(
+    () => s.timeSlots,
+    async () => {
+      const bookings = s.allBookings;
+      if (bookings.length) {
+        const bookingsWithGuestLists = bookings.filter(b => b.status === "filled" || b.status === "assigned");
+        if (bookingsWithGuestLists.length) {
+          await Promise.all(bookingsWithGuestLists.map(b => gl.fetchByBooking(b.id)));
+        }
+      }
+    },
+    { deep: true },
+  );
 });
 
 const days = computed<Date[]>(() => {
@@ -47,19 +69,28 @@ async function confirmDay(
   dayDropdown.value = null;
 }
 
-type BookingEdit = { id: number; date: string; time: string; guests: number };
+type BookingEdit = { id: number; date: string; time: string; guests: number; agentId?: string | number };
 
 const showBooking = ref<boolean>(false);
 const editingBooking = ref<BookingEdit | null>(null);
 const initialSlot = ref<{ date?: string; time?: string }>({});
 
 const showMulti = ref<boolean>(false);
+
 function closeMulti(): void {
   showMulti.value = false;
   s.clearSelection();
 }
 
 const limitModal = ref<{ date: string; time: string; limit: number } | null>(null);
+
+watch([showBooking, showMulti, limitModal], () => {
+  const weekHeader = document.querySelector("[data-week-header]");
+  if (weekHeader) {
+    const event = new CustomEvent("close-datepicker");
+    weekHeader.dispatchEvent(event);
+  }
+});
 
 async function resolveSlotLimit(date: string, time: string): Promise<number> {
   const fromWeek = s.slotMap[date]?.[time]?.limit;
@@ -82,10 +113,8 @@ async function openCreate({ date, time }: { date: string; time: string }) {
   showBooking.value = true;
 }
 
-function openEdit(b: { id: number; date: string; time: string; guests: number }) {
-  editingBooking.value = { id: b.id, date: b.date, time: b.time, guests: b.guests };
-  initialSlot.value = {};
-  showBooking.value = true;
+async function openEdit(b: { id: number; date: string; time: string; guests: number; agentId?: string | number }) {
+  await navigateTo(`/booking/${b.id}/edit`);
 }
 
 function closeBooking(): void {

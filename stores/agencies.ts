@@ -49,6 +49,17 @@ export const useAgenciesStore = defineStore("agencies", () => {
     return res;
   }
 
+  async function removeAgency(agency_id: string) {
+    const res = await useApi("/users/admin/remove-agency", {
+      method: "POST",
+      body: { agency_id },
+    }) as { ok?: boolean };
+    const i = items.value.findIndex(a => a.agency_id === agency_id);
+    if (i !== -1)
+      items.value.splice(i, 1);
+    return res;
+  }
+
   return {
     items,
     loading,
@@ -56,5 +67,6 @@ export const useAgenciesStore = defineStore("agencies", () => {
     fetchAgencies,
     changeAgencyEmail,
     changeAgencyName,
+    removeAgency,
   };
 });

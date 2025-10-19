@@ -1,4 +1,6 @@
 <script setup>
+import { useGuestListsStore } from "@/stores/guest-lists";
+
 const props = defineProps({
   start: Date,
   end: Date,
@@ -8,6 +10,24 @@ const props = defineProps({
 });
 
 const emits = defineEmits(["selectSlot", "selectBooking"]);
+const gl = useGuestListsStore();
+
+const bookingsWithStatus = computed(() => {
+  return (props.bookings || []).map(b => ({
+    ...b,
+    hasGuestList: gl.hasGuestList && gl.hasGuestList(b.id),
+  }));
+});
+
+function getBookingBadgeClass(booking) {
+  if (booking.status === "assigned") {
+    return "badge-success";
+  }
+  if (booking.hasGuestList) {
+    return "badge-warning";
+  }
+  return "badge-primary";
+}
 
 const auth = useAuthStore();
 
@@ -48,10 +68,6 @@ onBeforeUnmount(() => {
 });
 
 const isDisabled = computed(() => {
-  if (auth.role === "admin") {
-    return false;
-  }
-
   const now = new Date(nowTick.value);
   const slot = props.start;
 
@@ -87,11 +103,13 @@ const isDisabled = computed(() => {
     </div>
     <div v-if="bookings.length" class="flex flex-wrap gap-1 flex-1 overflow-auto overflow-x-visible mt-1 mb-1 pr-1 relative">
       <span
-        v-for="b in bookings"
+        v-for="b in bookingsWithStatus"
         :key="b.id"
-        class="badge p-1 badge-primary text-xs cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:shadow-md relative hover:z-10"
+        class="badge p-1 text-xs cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:shadow-md relative hover:z-10"
+        :class="getBookingBadgeClass(b)"
         @click.stop="onSelectBooking({
           id: b.id,
+          agentId: b.agentId,
           agentName: b.agentName,
           guests: b.guests,
           date: props.start.toISOString().split('T')[0],
