@@ -1,8 +1,11 @@
 <script setup lang="ts">
 const auth = useAuthStore();
-if (auth.isAuthenticated) {
-  navigateTo("/bookings");
-}
+
+onMounted(() => {
+  if (auth.isAuthenticated) {
+    navigateTo("/bookings");
+  }
+});
 </script>
 
 <template>

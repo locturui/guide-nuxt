@@ -186,9 +186,14 @@ watch(stickyTop, () => requestAnimationFrame(updateFloating));
       />
     </div>
 
+    <div v-if="s.loading" class="flex justify-center items-center py-20">
+      <span class="loading loading-spinner loading-lg" />
+    </div>
+
     <div ref="sentinelRef" style="height:0; margin:0; padding:0;" />
 
     <TimeGrid
+      v-if="!s.loading"
       :days="days"
       :times="s.allTimes"
       :role="role"

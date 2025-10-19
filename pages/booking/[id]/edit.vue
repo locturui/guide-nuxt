@@ -10,11 +10,15 @@ import { useGuidesStore } from "@/stores/guides";
 import { useScheduleStore } from "@/stores/schedule";
 import { isHalfHour, roundToHalfHour } from "~/utils/time";
 
+definePageMeta({
+  middleware: "auth",
+});
+
 const route = useRoute();
 const auth = useAuthStore();
 
 const bookingId = route.params.id as string;
-const role = auth.role as "admin" | "agency";
+const role = (auth.role || "agency") as "admin" | "agency";
 
 const s = useScheduleStore();
 const gl = useGuestListsStore();
@@ -334,7 +338,7 @@ async function onUploadPreview() {
       }
     }
     catch (e: any) {
-      if (e?.response?.status === 400 && e?.data) {
+      if ((e?.status === 400 || e?.statusCode === 400) && e?.data) {
         try {
           glPreview.value = e.data;
 
@@ -420,7 +424,7 @@ async function onConfirmPreview() {
       }
     }
     catch (e: any) {
-      if (e?.response?.status === 400 && e?.data) {
+      if ((e?.status === 400 || e?.statusCode === 400) && e?.data) {
         if (e.data.preview_id) {
           glPreview.value = e.data;
         }
@@ -472,7 +476,7 @@ async function onPreviewManual() {
     }
   }
   catch (e: any) {
-    if (e?.response?.status === 400 && e?.data) {
+    if ((e?.status === 400 || e?.statusCode === 400) && e?.data) {
       if (e.data.guests || e.data.errors || e.data.preview_id) {
         glPreview.value = e.data;
       }
@@ -483,7 +487,7 @@ async function onPreviewManual() {
       return;
     }
 
-    if (e?.response?.status === 422 && Array.isArray(e?.data?.detail)) {
+    if ((e?.status === 422 || e?.statusCode === 422) && Array.isArray(e?.data?.detail)) {
       const msgs = e.data.detail.map((d: any) => d?.msg || d?.message || JSON.stringify(d));
       glError.value = msgs.join(", ");
     }

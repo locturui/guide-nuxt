@@ -8,7 +8,7 @@ type LoginResponse = {
   role: UserRole;
 };
 
-type UserRole = "admin" | "agent" | null;
+type UserRole = "admin" | "agency" | null;
 
 export const useAuthStore = defineStore("auth", () => {
   const token = useCookie<string | null>("access_token");
@@ -79,7 +79,6 @@ export const useAuthStore = defineStore("auth", () => {
 
   async function refreshTokenOnExpire() {
     if (isRefreshing.value) {
-      // Wait for ongoing refresh to complete
       while (isRefreshing.value) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
