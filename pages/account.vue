@@ -78,7 +78,7 @@ onMounted(() => {
 });
 
 watch(() => auth.role, (role) => {
-  if (role === "agent") {
+  if (role === "agency") {
     guides.fetchGuides();
   }
 });
