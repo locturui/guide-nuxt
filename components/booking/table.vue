@@ -57,6 +57,12 @@ const dayDropdown = ref<string | null>(null);
 const viewMode = ref<"grid" | "timeline">("grid");
 const fmt = (d: Date): string => formattedDate(d);
 
+function forceGridOnDesktop() {
+  if (window.innerWidth >= 768) {
+    viewMode.value = "grid";
+  }
+}
+
 function toggleDay(d: Date): void {
   const key = fmt(d);
   dayDropdown.value = dayDropdown.value === key ? null : key;
@@ -171,9 +177,11 @@ function updateFloatingLayout() {
 
 onMounted(() => {
   stickyTop.value = 10;
+  forceGridOnDesktop();
 
   window.addEventListener("scroll", updateFloating, { passive: true });
   window.addEventListener("resize", () => {
+    forceGridOnDesktop();
     updateFloating();
     updateFloatingLayout();
   });
@@ -193,6 +201,10 @@ onBeforeUnmount(() => {
 });
 
 watch(stickyTop, () => requestAnimationFrame(updateFloating));
+
+watch(viewMode, () => {
+  forceGridOnDesktop();
+});
 </script>
 
 <template>
@@ -207,7 +219,7 @@ watch(stickyTop, () => requestAnimationFrame(updateFloating));
         @next="nextWeek"
         @jump="jumpWeek"
       />
-      <div class="flex items-center gap-3 mt-3 mb-4">
+      <div class="flex items-center gap-3 mt-3 mb-4 md:hidden">
         <button
           class="btn btn-sm md:btn-md"
           :class="viewMode === 'grid' ? 'btn-primary' : ''"
