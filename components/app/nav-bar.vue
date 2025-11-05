@@ -12,6 +12,7 @@ const auth = useAuthStore();
 const open = ref(false);
 const agencyName = ref<string | null>(null);
 const dropdownRef = ref<HTMLElement | null>(null);
+const isToggling = ref(false);
 
 async function loadAgencyName() {
   if (!auth.isAuthenticated || auth.role === "admin") {
@@ -26,8 +27,13 @@ async function loadAgencyName() {
   }
 }
 
-function toggleDropdown() {
+async function toggleDropdown() {
+  isToggling.value = true;
   open.value = !open.value;
+  await nextTick();
+  setTimeout(() => {
+    isToggling.value = false;
+  }, 100);
 }
 
 function closeDropdown() {
@@ -35,6 +41,9 @@ function closeDropdown() {
 }
 
 function handleClickOutside(event: MouseEvent | TouchEvent) {
+  if (isToggling.value) {
+    return;
+  }
   if (dropdownRef.value && !dropdownRef.value.contains(event.target as Node)) {
     closeDropdown();
   }
@@ -42,13 +51,13 @@ function handleClickOutside(event: MouseEvent | TouchEvent) {
 
 onMounted(() => {
   loadAgencyName();
-  document.addEventListener("click", handleClickOutside);
-  document.addEventListener("touchstart", handleClickOutside);
+  document.addEventListener("click", handleClickOutside, true);
+  document.addEventListener("touchend", handleClickOutside, true);
 });
 
 onUnmounted(() => {
-  document.removeEventListener("click", handleClickOutside);
-  document.removeEventListener("touchstart", handleClickOutside);
+  document.removeEventListener("click", handleClickOutside, true);
+  document.removeEventListener("touchend", handleClickOutside, true);
 });
 
 watch(
@@ -79,7 +88,7 @@ function logout() {
           class="btn btn-ghost btn-sm md:btn-md"
           type="button"
           @click.stop="toggleDropdown"
-          @touchstart.stop="toggleDropdown"
+          @touchstart.stop.prevent="toggleDropdown"
         >
           <span class="ml-1 md:ml-4 font-medium truncate max-w-[40vw] md:max-w-none">
             {{ auth.role === 'admin' ? 'Администратор' : (agencyName || 'Агентство') }}
