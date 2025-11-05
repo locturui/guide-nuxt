@@ -82,8 +82,8 @@ function logout() {
       </NuxtLink>
     </div>
 
-    <div v-if="auth.isAuthenticated" class="flex-none gap-2 md:gap-4">
-      <div ref="dropdownRef" class="dropdown dropdown-end">
+    <div v-if="auth.isAuthenticated" class="flex-none gap-2 md:gap-4 relative">
+      <div ref="dropdownRef" class="relative">
         <button
           class="btn btn-ghost btn-sm md:btn-md"
           type="button"
@@ -111,8 +111,8 @@ function logout() {
         </button>
 
         <ul
-          v-show="open"
-          class="mt-2 md:mt-3 p-2 shadow-lg menu menu-compact dropdown-content bg-base-100 rounded-box w-44 md:w-52 z-50"
+          v-if="open"
+          class="absolute right-0 mt-2 p-2 shadow-lg menu menu-compact bg-base-100 rounded-box w-44 md:w-52 z-[9999]"
           @click.stop
           @touchstart.stop
         >
