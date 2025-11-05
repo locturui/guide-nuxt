@@ -9,6 +9,20 @@ const emit = defineEmits(["jump", "prev", "next"]);
 
 const show = ref(false);
 const jump = ref(null);
+const datepickerRef = ref(null);
+const headerButtonRef = ref(null);
+
+function handleClickOutside(event) {
+  const target = event.target;
+  if (
+    datepickerRef.value
+    && !datepickerRef.value.contains(target)
+    && headerButtonRef.value
+    && !headerButtonRef.value.contains(target)
+  ) {
+    show.value = false;
+  }
+}
 
 onMounted(() => {
   const element = document.querySelector("[data-week-header]");
@@ -17,6 +31,21 @@ onMounted(() => {
       show.value = false;
     });
   }
+
+  watch(show, (isOpen) => {
+    if (isOpen) {
+      setTimeout(() => {
+        document.addEventListener("click", handleClickOutside);
+      }, 0);
+    }
+    else {
+      document.removeEventListener("click", handleClickOutside);
+    }
+  });
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("click", handleClickOutside);
 });
 
 const rangeTitle = computed(() => formatRangeTitle(props.weekStart));
@@ -38,6 +67,7 @@ function jumpTo() {
 
     <div class="relative">
       <h2
+        ref="headerButtonRef"
         class="font-bold text-sm sm:text-base cursor-pointer px-2 py-1 rounded-md shadow-[2px_2px_6px_#00000025] hover:shadow-[3px_3px_8px_#00000035] transition-shadow bg-white"
         @click="show = true"
       >
@@ -46,7 +76,9 @@ function jumpTo() {
 
       <div
         v-if="show"
-        class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-base-200 p-3 sm:p-4 rounded shadow z-50 w-64 sm:w-80"
+        ref="datepickerRef"
+        class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-base-200 p-3 sm:p-4 rounded shadow z-[1500] w-64 sm:w-80"
+        @click.stop
       >
         <Datepicker
           v-model="jump"
