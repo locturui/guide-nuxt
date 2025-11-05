@@ -273,7 +273,7 @@ watch(viewMode, () => {
       </div>
 
       <BookingTimeline
-        v-else
+        v-else-if="!s.loading"
         :days="days"
         :times="s.allTimes"
         :role="role"
