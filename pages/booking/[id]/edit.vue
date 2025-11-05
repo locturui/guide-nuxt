@@ -338,7 +338,7 @@ async function onUploadPreview() {
       }
     }
     catch (e: any) {
-      if ((e?.status === 400 || e?.statusCode === 400) && e?.data) {
+      if (e?.response?.status === 400 && e?.data) {
         try {
           glPreview.value = e.data;
 
@@ -421,10 +421,11 @@ async function onConfirmPreview() {
       }
       else {
         glPreview.value = null;
+        glFile.value = null;
       }
     }
     catch (e: any) {
-      if ((e?.status === 400 || e?.statusCode === 400) && e?.data) {
+      if (e?.response?.status === 400 && e?.data) {
         if (e.data.preview_id) {
           glPreview.value = e.data;
         }
@@ -476,7 +477,7 @@ async function onPreviewManual() {
     }
   }
   catch (e: any) {
-    if ((e?.status === 400 || e?.statusCode === 400) && e?.data) {
+    if (e?.response?.status === 400 && e?.data) {
       if (e.data.guests || e.data.errors || e.data.preview_id) {
         glPreview.value = e.data;
       }
@@ -487,7 +488,7 @@ async function onPreviewManual() {
       return;
     }
 
-    if ((e?.status === 422 || e?.statusCode === 422) && Array.isArray(e?.data?.detail)) {
+    if (e?.response?.status === 422 && Array.isArray(e?.data?.detail)) {
       const msgs = e.data.detail.map((d: any) => d?.msg || d?.message || JSON.stringify(d));
       glError.value = msgs.join(", ");
     }
@@ -598,20 +599,23 @@ async function onAssignGuide() {
 
   <div v-else-if="booking" class="container mx-auto p-6 max-w-4xl">
     <div class="mb-6">
-      <div class="flex items-start justify-between">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
-          <h1 class="text-3xl font-bold">
+          <h1 class="text-2xl md:text-3xl font-bold">
             Редактирование бронирования
           </h1>
           <p class="text-gray-600 mt-2">
             ID: {{ bookingId }}
           </p>
-          <div v-if="role === 'admin' && booking.agentName" class="mt-2">
-            <span class="badge badge-primary badge-lg">{{ booking.agentName }}</span>
+          <div class="mt-2 flex items-center gap-2 flex-wrap">
+            <span v-if="role === 'admin' && booking.agentName" class="badge badge-primary badge-lg">{{ booking.agentName }}</span>
+            <span v-if="booking.immediate" class="badge border border-dashed border-amber-500 text-amber-700 bg-amber-50">
+              Залётные
+            </span>
           </div>
         </div>
         <button
-          class="btn btn-ghost"
+          class="btn btn-ghost btn-sm md:btn-md self-start sm:self-auto mt-2 sm:mt-0"
           @click="navigateTo('/bookings')"
         >
           ← Назад к бронированиям
@@ -805,7 +809,7 @@ async function onAssignGuide() {
                       </div>
                     </div>
                   </div>
-                  <div class="grid grid-cols-2 gap-2">
+                  <div class="grid grid-cols-1 gap-2">
                     <div>
                       <label class="block text-xs text-gray-600 mb-1">Имя</label>
                       <input
@@ -905,8 +909,53 @@ async function onAssignGuide() {
 
           <template v-if="hasGuestList">
             <div class="space-y-2">
-              <div class="max-h-64 overflow-auto border rounded">
-                <table class="table table-zebra table-sm">
+              <div class="max-h-64 overflow-auto border rounded p-3 md:p-0">
+                <div class="md:hidden space-y-2">
+                  <div
+                    v-for="(g, i) in manualGuests"
+                    :key="i"
+                    class="border rounded p-3 bg-white"
+                  >
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="text-sm text-gray-500">#{{ i + 1 }}</span>
+                    </div>
+                    <div class="grid grid-cols-1 gap-2 text-sm">
+                      <div>
+                        <div class="text-gray-500">
+                          Имя
+                        </div>
+                        <div class="text-gray-900 break-words">
+                          {{ g.name }}
+                        </div>
+                      </div>
+                      <div>
+                        <div class="text-gray-500">
+                          ДР
+                        </div>
+                        <div class="text-gray-900 break-words">
+                          {{ g.date_of_birth }}
+                        </div>
+                      </div>
+                      <div>
+                        <div class="text-gray-500">
+                          Город
+                        </div>
+                        <div class="text-gray-900 break-words">
+                          {{ g.city }}
+                        </div>
+                      </div>
+                      <div>
+                        <div class="text-gray-500">
+                          Телефон
+                        </div>
+                        <div class="text-gray-900 break-words">
+                          {{ g.phone }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <table class="hidden md:table md:table-zebra md:table-sm w-full">
                   <thead>
                     <tr>
                       <th>#</th><th>Имя</th><th>ДР</th><th>Город</th><th>Телефон</th>
@@ -1000,7 +1049,7 @@ async function onAssignGuide() {
                             </div>
                           </div>
                         </div>
-                        <div class="grid grid-cols-2 gap-2">
+                        <div class="grid grid-cols-1 gap-2">
                           <div>
                             <label class="block text-xs text-gray-600 mb-1">Имя</label>
                             <input

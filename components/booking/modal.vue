@@ -146,9 +146,9 @@ function onEditBooking() {
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-60" @click="$emit('close')">
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4" @click="$emit('close')">
     <div
-      class="bg-white p-6 rounded-lg relative w-80"
+      class="bg-white p-4 sm:p-6 rounded-lg relative w-full max-w-sm"
       @click.stop
     >
       <button

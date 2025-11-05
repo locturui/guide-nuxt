@@ -45,17 +45,17 @@ function logout() {
 </script>
 
 <template>
-  <div class="navbar shadow-md px-6 bg-gray-100">
-    <div class="flex-1">
-      <NuxtLink to="/" class="text-xl font-bold">
+  <div class="navbar shadow-md px-4 md:px-6 bg-gray-100">
+    <div class="flex-1 min-w-0">
+      <NuxtLink to="/" class="text-lg md:text-xl font-bold truncate">
         Innopolis TourBooking
       </NuxtLink>
     </div>
 
-    <div v-if="auth.isAuthenticated" class="flex-none gap-4">
+    <div v-if="auth.isAuthenticated" class="flex-none gap-2 md:gap-4">
       <div class="dropdown dropdown-end">
-        <button class="btn btn-ghost" @click="open = !open">
-          <span class="ml-4 font-medium">
+        <button class="btn btn-ghost btn-sm md:btn-md" @click="open = !open">
+          <span class="ml-1 md:ml-4 font-medium truncate max-w-[40vw] md:max-w-none">
             {{ auth.role === 'admin' ? 'Администратор' : (agencyName || 'Агентство') }}
           </span>
           <svg
@@ -76,7 +76,7 @@ function logout() {
 
         <ul
           v-show="open"
-          class="mt-3 p-2 shadow menu menu-compact dropdown-content bg-base-100 rounded-box w-52"
+          class="mt-2 md:mt-3 p-2 shadow menu menu-compact dropdown-content bg-base-100 rounded-box w-44 md:w-52"
         >
           <li>
             <NuxtLink to="/bookings">
@@ -94,7 +94,7 @@ function logout() {
     </div>
 
     <div v-else>
-      <NuxtLink to="/login" class="btn btn-ghost">
+      <NuxtLink to="/login" class="btn btn-ghost btn-sm md:btn-md">
         Войти
       </NuxtLink>
     </div>

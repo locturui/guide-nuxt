@@ -54,6 +54,7 @@ function jumpWeek(d: Date): void {
 }
 
 const dayDropdown = ref<string | null>(null);
+const viewMode = ref<"grid" | "timeline">("grid");
 const fmt = (d: Date): string => formattedDate(d);
 
 function toggleDay(d: Date): void {
@@ -108,6 +109,16 @@ async function openCreate({ date, time }: { date: string; time: string }) {
     limitModal.value = { date, time, limit };
     return;
   }
+  const today = formattedDate(new Date());
+  if (date === today) {
+    const now = new Date();
+    const [h, m] = time.split(":").map(Number);
+    const slot = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+    if (slot > now) {
+      await navigateTo(`/booking/immediate?date=${date}&time=${time}`);
+      return;
+    }
+  }
   editingBooking.value = null;
   initialSlot.value = { date, time };
   showBooking.value = true;
@@ -129,6 +140,15 @@ const scrollerRef = ref<HTMLElement | null>(null);
 const floatLeft = ref(0);
 const floatWidth = ref(0);
 const floatTranslateX = ref(0);
+const floatingRef = ref<HTMLElement | null>(null);
+
+function onFloatingWheel(e: WheelEvent) {
+  const el = scrollerRef.value;
+  if (!el)
+    return;
+  const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+  el.scrollLeft += dx;
+}
 
 function updateFloating() {
   const s = sentinelRef.value;
@@ -176,7 +196,10 @@ watch(stickyTop, () => requestAnimationFrame(updateFloating));
 </script>
 
 <template>
-  <div class="p-4 w-full overflow-x-auto px-15 pt-5" :style="{ '--tg-sticky-top': `${stickyTop}px` }">
+  <div
+    class="p-4 w-full px-4 sm:px-6 md:px-10 lg:px-15 pt-4 md:pt-5"
+    :style="{ '--tg-sticky-top': `${stickyTop}px` }"
+  >
     <div ref="headerRef">
       <WeekHeader
         :week-start="s.weekStart"
@@ -184,102 +207,137 @@ watch(stickyTop, () => requestAnimationFrame(updateFloating));
         @next="nextWeek"
         @jump="jumpWeek"
       />
-    </div>
-
-    <div v-if="s.loading" class="flex justify-center items-center py-20">
-      <span class="loading loading-spinner loading-lg" />
-    </div>
-
-    <div ref="sentinelRef" style="height:0; margin:0; padding:0;" />
-
-    <TimeGrid
-      v-if="!s.loading"
-      :days="days"
-      :times="s.allTimes"
-      :role="role"
-      :ghost-headers="showFloating"
-      @toggle-day="toggleDay"
-      @select-slot="openCreate"
-      @select-booking="openEdit"
-    >
-      <template #day-dropdown="{ date }">
-        <transition name="modal-fade">
-          <div v-if="role === 'admin' && dayDropdown === fmt(date)">
-            <DayCategoryDropdown
-              :date-str="fmt(date)"
-              :model-value="dayDropdown"
-              @confirm="p => confirmDay(fmt(date), p)"
-              @cancel="dayDropdown = null"
-            />
-          </div>
-        </transition>
-      </template>
-    </TimeGrid>
-  </div>
-
-  <MultiEditBar @open="showMulti = true" />
-
-  <BookingModal
-    v-if="showBooking"
-    :role="role"
-    :booking="editingBooking"
-    :initial-date="initialSlot.date"
-    :initial-time="initialSlot.time"
-    @close="closeBooking"
-  />
-
-  <MultiEditModal
-    v-if="showMulti"
-    :pairs="s.selectedPairs"
-    @close="closeMulti"
-  />
-  <SlotLimitModal
-    v-if="limitModal"
-    :date="limitModal.date"
-    :time="limitModal.time"
-    :initial-limit="limitModal.limit"
-    @close="() => (limitModal = null)"
-  />
-
-  <teleport to="body">
-    <div
-      v-show="showFloating"
-      class="fixed left-0 right-0 z-[400] bg-white w-full pt-3 pb-1"
-      :style="{ top: `0px` }"
-    >
-      <div class="px-15">
-        <div
-          class="grid w-full gap-0"
-          style="grid-template-columns:40px repeat(7, minmax(0, 1fr));"
+      <div class="flex items-center gap-3 mt-3 mb-4">
+        <button
+          class="btn btn-sm md:btn-md"
+          :class="viewMode === 'grid' ? 'btn-primary' : ''"
+          @click="viewMode = 'grid'"
         >
-          <div />
+          Сетка
+        </button>
+        <button
+          class="btn btn-sm md:btn-md"
+          :class="viewMode === 'timeline' ? 'btn-primary' : ''"
+          @click="viewMode = 'timeline'"
+        >
+          Таймлайн
+        </button>
+      </div>
 
-          <div v-for="d in days" :key="`float-${d.toISOString()}`">
-            <DayHeader
-              :date="d"
-              :role="role"
-              @toggle="toggleDay(d)"
-            >
-              <div class="relative">
-                <transition name="modal-fade">
-                  <div
-                    v-if="role === 'admin' && dayDropdown === fmt(d)"
-                    class="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-[1000]"
-                    style="pointer-events:auto"
-                  >
-                    <DayCategoryDropdown
-                      :date-str="fmt(d)"
-                      :model-value="dayDropdown"
-                      @confirm="p => confirmDay(fmt(d), p)"
-                      @cancel="dayDropdown = null"
-                    />
-                  </div>
-                </transition>
+      <div v-if="s.loading" class="flex justify-center items-center py-20">
+        <span class="loading loading-spinner loading-lg" />
+      </div>
+
+      <div ref="sentinelRef" style="height:0; margin:0; padding:0;" />
+
+      <div
+        v-if="viewMode === 'grid'"
+        ref="scrollerRef"
+        class="w-full overflow-x-auto"
+      >
+        <TimeGrid
+          v-if="!s.loading"
+          :days="days"
+          :times="s.allTimes"
+          :role="role"
+          :ghost-headers="showFloating"
+          @toggle-day="toggleDay"
+          @select-slot="openCreate"
+          @select-booking="openEdit"
+        >
+          <template #day-dropdown="{ date }">
+            <transition name="modal-fade">
+              <div v-if="role === 'admin' && dayDropdown === fmt(date)">
+                <DayCategoryDropdown
+                  :date-str="fmt(date)"
+                  :model-value="dayDropdown"
+                  @confirm="p => confirmDay(fmt(date), p)"
+                  @cancel="dayDropdown = null"
+                />
               </div>
-            </DayHeader>
+            </transition>
+          </template>
+        </TimeGrid>
+      </div>
+
+      <BookingTimeline
+        v-else
+        :days="days"
+        :times="s.allTimes"
+        :role="role"
+        @toggle-day="toggleDay"
+        @select-slot="openCreate"
+        @select-booking="openEdit"
+      />
+    </div>
+
+    <MultiEditBar @open="showMulti = true" />
+
+    <BookingModal
+      v-if="showBooking"
+      :role="role"
+      :booking="editingBooking"
+      :initial-date="initialSlot.date"
+      :initial-time="initialSlot.time"
+      @close="closeBooking"
+    />
+
+    <MultiEditModal
+      v-if="showMulti"
+      :pairs="s.selectedPairs"
+      @close="closeMulti"
+    />
+    <SlotLimitModal
+      v-if="limitModal"
+      :date="limitModal.date"
+      :time="limitModal.time"
+      :initial-limit="limitModal.limit"
+      @close="() => (limitModal = null)"
+    />
+
+    <teleport to="body">
+      <div
+        v-show="viewMode === 'grid' && showFloating"
+        ref="floatingRef"
+        class="fixed z-[400] bg-white pt-2 pb-1 shadow-sm border-b border-gray-200"
+        :style="{ top: `0px`, left: `${floatLeft}px`, width: `${floatWidth}px` }"
+        @wheel.prevent="onFloatingWheel"
+      >
+        <div class="px-4 sm:px-6 md:px-10 lg:px-15">
+          <div
+            class="grid w-full gap-0"
+            style="grid-template-columns:32px repeat(7, minmax(120px, 1fr));"
+            :style="{ transform: `translateX(${floatTranslateX}px)` }"
+          >
+            <div />
+
+            <div v-for="d in days" :key="`float-${d.toISOString()}`">
+              <DayHeader
+                :date="d"
+                :role="role"
+                @toggle="toggleDay(d)"
+              >
+                <div class="relative">
+                  <transition name="modal-fade">
+                    <div
+                      v-if="role === 'admin' && dayDropdown === fmt(d)"
+                      class="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-[1000]"
+                      style="pointer-events:auto"
+                    >
+                      <DayCategoryDropdown
+                        :date-str="fmt(d)"
+                        :model-value="dayDropdown"
+                        @confirm="p => confirmDay(fmt(d), p)"
+                        @cancel="dayDropdown = null"
+                      />
+                    </div>
+                  </transition>
+                </div>
+              </DayHeader>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </teleport>
+    </teleport>
+  </div>
 </template>

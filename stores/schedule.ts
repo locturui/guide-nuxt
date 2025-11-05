@@ -1,6 +1,6 @@
 import { formattedDate, startOfWeek } from "@/utils/date";
 
-export type BookingDTO = { id: number; people_count: number; agency_id?: number; agency_name?: string; status?: string; precise_time?: string };
+export type BookingDTO = { id: number; people_count: number; agency_id?: number; agency_name?: string; status?: string; precise_time?: string; immediate?: boolean };
 export type SlotDTO = { time: string; limit: number; remaining: number; bookings?: BookingDTO[] };
 export type DayDTO = { date: string; timeslots: SlotDTO[] };
 
@@ -41,6 +41,7 @@ export const useScheduleStore = defineStore("schedule", () => {
           agentName: b.agency_name,
           status: b.status,
           preciseTime: b.precise_time,
+          immediate: (b as any).immediate,
         })),
       ),
     ));

@@ -10,6 +10,18 @@ definePageMeta({
 const auth = useAuthStore();
 const isAdmin = computed(() => auth.role === "admin");
 const isAgency = computed(() => auth.role !== "admin");
+const telegramStatus = ref<{ id?: number | null; username?: string | null; link?: string | null } | null>(null);
+const telegramLink = computed(() => {
+  const u = telegramStatus.value?.username as string | undefined;
+  const id = telegramStatus.value?.id as number | undefined;
+  const handle = u || (id ? String(id) : undefined);
+  return handle ? `https://t.me/${handle}` : "#";
+});
+const linkLoading = ref(false);
+const linkError = ref("");
+const unlinkLoading = ref(false);
+const unlinkError = ref("");
+const unlinkSuccess = ref(false);
 
 const oldPassword = ref("");
 const newPassword = ref("");
@@ -72,16 +84,50 @@ onMounted(() => {
   if (isAdmin.value) {
     agencies.fetchAgencies();
   }
+  if (isAgency.value || isAdmin.value) {
+    fetchMyAccount();
+  }
   if (isAgency.value) {
     guides.fetchGuides();
   }
 });
 
 watch(() => auth.role, (role) => {
-  if (role === "agency") {
+  if (role === "agent") {
     guides.fetchGuides();
   }
 });
+async function fetchMyAccount() {
+  try {
+    const me = await useApi<{ id: string; email: string; agency_name: string; telegram_id?: number | null; telegram_username?: string | null }>("/users/my");
+    telegramStatus.value = {
+      id: me.telegram_id ?? null,
+      username: me.telegram_username ?? null,
+      link: null,
+    };
+  }
+  catch {}
+}
+async function getTelegramLink() {
+  // eslint-disable-next-line no-console
+  console.log("getTelegramLink clicked");
+  linkError.value = "";
+  linkLoading.value = true;
+  try {
+    const { link } = await useApi<{ link: string }>("/telegram/link", { method: "POST" });
+    telegramStatus.value = { ...(telegramStatus.value || {}), link };
+    const opened = window.open(link, "_blank");
+    if (!opened) {
+      window.location.href = link;
+    }
+  }
+  catch (e: any) {
+    linkError.value = e?.data?.detail || e?.message || "Не удалось получить ссылку";
+  }
+  finally {
+    linkLoading.value = false;
+  }
+}
 
 type EditRow = { name: string; email: string };
 const editing: Record<string, EditRow> = reactive({});
@@ -249,10 +295,61 @@ async function deleteGuide(id: string) {
     guideRowError[id] = e?.data?.detail || e?.message || "Не удалось удалить гида";
   }
 }
+async function unlinkTelegram() {
+  unlinkError.value = "";
+  unlinkSuccess.value = false;
+  unlinkLoading.value = true;
+  try {
+    await useApi("/telegram/unlink", { method: "POST" });
+    telegramStatus.value = { id: null, username: null, link: null };
+    try {
+      await fetchMyAccount();
+    }
+    catch {}
+    unlinkSuccess.value = true;
+  }
+  catch (e: any) {
+    unlinkError.value = e?.data?.detail || e?.message || "Не удалось отключиться";
+  }
+  finally {
+    unlinkLoading.value = false;
+  }
+}
+
+let tgPollInterval: ReturnType<typeof setInterval> | null = null;
+function startTelegramLinkPolling() {
+  try {
+    if (tgPollInterval) {
+      clearInterval(tgPollInterval);
+    }
+  }
+  catch {}
+  tgPollInterval = setInterval(async () => {
+    try {
+      await fetchMyAccount();
+      if (telegramStatus.value && telegramStatus.value.id) {
+        if (tgPollInterval) {
+          clearInterval(tgPollInterval);
+          tgPollInterval = null;
+        }
+      }
+    }
+    catch {}
+  }, 5000);
+}
+try {
+  onUnmounted(() => {
+    if (tgPollInterval) {
+      clearInterval(tgPollInterval);
+      tgPollInterval = null;
+    }
+  });
+}
+catch {}
 </script>
 
 <template>
-  <div class="w-full min-h-screen bg-gray-50 py-16 px-6 md:px-12">
+  <div class="w-full min-h-screen bg-gray-50 py-12 md:py-16 px-4 sm:px-6 md:px-12">
     <div class="max-w-6xl mx-auto">
       <header class="mb-12 text-center">
         <h1 class="text-3xl font-semibold text-gray-900">
@@ -263,7 +360,7 @@ async function deleteGuide(id: string) {
         </p>
       </header>
 
-      <div class="grid md:grid-cols-2 gap-16">
+      <div class="grid md:grid-cols-2 gap-8 md:gap-16">
         <section class="flex-1 space-y-6 max-w-md w-full">
           <h2 class="text-xl font-medium text-gray-800 border-b pb-2">
             Сменить пароль
@@ -274,7 +371,7 @@ async function deleteGuide(id: string) {
               <input
                 v-model="oldPassword"
                 type="password"
-                class="input input-bordered w-full"
+                class="input input-bordered input-sm md:input-md w-full"
               >
             </div>
             <div>
@@ -282,12 +379,12 @@ async function deleteGuide(id: string) {
               <input
                 v-model="newPassword"
                 type="password"
-                class="input input-bordered w-full"
+                class="input input-bordered input-sm md:input-md w-full"
               >
             </div>
           </div>
           <div class="flex items-center gap-3">
-            <button class="btn btn-primary" @click="changePassword">
+            <button class="btn btn-primary btn-sm md:btn-md" @click="changePassword">
               Обновить пароль
             </button>
             <span v-if="passwordSuccess" class="text-green-600 text-sm">✓ Успех</span>
@@ -308,7 +405,7 @@ async function deleteGuide(id: string) {
               <input
                 v-model="email"
                 type="email"
-                class="input input-bordered w-full"
+                class="input input-bordered input-sm md:input-md w-full"
               >
             </div>
             <div>
@@ -316,16 +413,70 @@ async function deleteGuide(id: string) {
               <input
                 v-model="name"
                 type="text"
-                class="input input-bordered w-full"
+                class="input input-bordered input-sm md:input-md w-full"
               >
             </div>
           </div>
           <div class="flex items-center gap-3">
-            <button class="btn btn-secondary" @click="createAgency">
+            <button class="btn btn-secondary btn-sm md:btn-md" @click="createAgency">
               Создать агентство
             </button>
             <span v-if="agencySuccess" class="text-green-600 text-sm">✓ Успех</span>
             <span v-if="agencyError" class="text-red-600 text-sm">⚠ {{ agencyError }}</span>
+          </div>
+        </section>
+
+        <section v-if="isAgency || isAdmin" class="flex-1 space-y-6 max-w-md w-full">
+          <h2 class="text-xl font-medium text-gray-800 border-b pb-2">
+            Telegram
+          </h2>
+          <div class="space-y-4">
+            <div v-if="telegramStatus?.id">
+              <div class="bg-white border rounded-lg p-4 flex items-center justify-between gap-4">
+                <p>
+                  Подключен аккаунт:
+                  <strong>
+                    <a
+                      :href="telegramLink"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      @{{ telegramStatus?.username || telegramStatus?.id }}
+                    </a>
+                  </strong>
+                </p>
+                <div class="flex gap-2 items-center justify-end flex-wrap">
+                  <button
+                    type="button"
+                    class="btn btn-error btn-sm md:btn-md"
+                    :disabled="unlinkLoading"
+                    @click.stop.prevent="unlinkTelegram()"
+                  >
+                    {{ unlinkLoading ? "Обработка..." : "Отключить" }}
+                  </button>
+                </div>
+              </div>
+
+              <p v-if="unlinkError" class="text-red-600 text-sm mt-2">
+                {{ unlinkError }}
+              </p>
+            </div>
+            <div v-else>
+              <p class="text-sm text-gray-600 mb-2">
+                Подключите ваш аккаунт Telegram, чтобы получать уведомления.
+              </p>
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm md:btn-md"
+                :disabled="linkLoading"
+                @click.stop.prevent="getTelegramLink(); startTelegramLinkPolling()"
+              >
+                {{ linkLoading ? "Генерация..." : "Подключить Telegram" }}
+              </button>
+              <p v-if="linkError" class="text-red-600 text-sm mt-2">
+                {{ linkError }}
+              </p>
+            </div>
           </div>
         </section>
         <section v-if="isAdmin" class="mt-16">
@@ -352,7 +503,7 @@ async function deleteGuide(id: string) {
                   <input
                     v-model="editing[a.agency_id].name"
                     type="text"
-                    class="input input-bordered w-full"
+                    class="input input-bordered input-sm md:input-md w-full"
                     :disabled="saving[a.agency_id]"
                   >
                 </template>
@@ -369,7 +520,7 @@ async function deleteGuide(id: string) {
                   <input
                     v-model="editing[a.agency_id].email"
                     type="email"
-                    class="input input-bordered w-full"
+                    class="input input-bordered input-sm md:input-md w-full"
                     :disabled="saving[a.agency_id]"
                   >
                 </template>
@@ -383,14 +534,14 @@ async function deleteGuide(id: string) {
               <div class="flex gap-2 justify-start md:justify-end">
                 <template v-if="editing[a.agency_id]">
                   <button
-                    class="btn btn-sm btn-primary"
+                    class="btn btn-xs sm:btn-sm btn-primary"
                     :disabled="saving[a.agency_id]"
                     @click="saveRow(a)"
                   >
                     {{ saving[a.agency_id] ? 'Сохранение…' : 'Сохранить' }}
                   </button>
                   <button
-                    class="btn btn-sm"
+                    class="btn btn-xs sm:btn-sm"
                     :disabled="saving[a.agency_id]"
                     @click="cancelEdit(a.agency_id)"
                   >
@@ -398,10 +549,10 @@ async function deleteGuide(id: string) {
                   </button>
                 </template>
                 <template v-else>
-                  <button class="btn btn-sm" @click="startEdit(a)">
+                  <button class="btn btn-xs sm:btn-sm" @click="startEdit(a)">
                     Редактировать
                   </button>
-                  <button class="btn btn-sm btn-error" @click="deleteAgency(a.agency_id)">
+                  <button class="btn btn-xs sm:btn-sm btn-error" @click="deleteAgency(a.agency_id)">
                     Удалить
                   </button>
                 </template>
@@ -428,7 +579,7 @@ async function deleteGuide(id: string) {
             Гиды агентства
           </h2>
 
-          <div class="grid md:grid-cols-2 gap-8">
+          <div class="grid md:grid-cols-2 gap-6 md:gap-8">
             <div class="space-y-4 max-w-md w-full">
               <h3 class="text-lg font-medium">
                 Добавить гида
@@ -439,7 +590,7 @@ async function deleteGuide(id: string) {
                   <input
                     v-model="guideLastName"
                     type="text"
-                    class="input input-bordered w-full"
+                    class="input input-bordered input-sm md:input-md w-full"
                     placeholder="Фамилия"
                   >
                 </div>
@@ -448,7 +599,7 @@ async function deleteGuide(id: string) {
                   <input
                     v-model="guideFirstName"
                     type="text"
-                    class="input input-bordered w-full"
+                    class="input input-bordered input-sm md:input-md w-full"
                     placeholder="Имя"
                   >
                 </div>
@@ -458,11 +609,11 @@ async function deleteGuide(id: string) {
                 <input
                   v-model="guideBadge"
                   type="text"
-                  class="input input-bordered w-full"
+                  class="input input-bordered input-sm md:input-md w-full"
                 >
               </div>
               <div class="flex items-center gap-3">
-                <button class="btn btn-secondary" @click="createGuide">
+                <button class="btn btn-secondary btn-sm md:btn-md" @click="createGuide">
                   Добавить
                 </button>
                 <span v-if="guideSuccess" class="text-green-600 text-sm">✓ Успех</span>
@@ -509,7 +660,7 @@ async function deleteGuide(id: string) {
                       <input
                         v-model="guideEditing[g.id].badge_number"
                         type="text"
-                        class="input input-bordered w-full"
+                        class="input input-bordered input-sm md:input-md w-full"
                         :disabled="guideSaving[g.id]"
                       >
                     </div>
@@ -532,14 +683,14 @@ async function deleteGuide(id: string) {
                   <div class="flex gap-2 justify-start md:justify-end">
                     <template v-if="guideEditing[g.id]">
                       <button
-                        class="btn btn-sm btn-primary"
+                        class="btn btn-xs sm:btn-sm btn-primary"
                         :disabled="guideSaving[g.id]"
                         @click="saveGuideRow(g)"
                       >
                         {{ guideSaving[g.id] ? 'Сохранение…' : 'Сохранить' }}
                       </button>
                       <button
-                        class="btn btn-sm"
+                        class="btn btn-xs sm:btn-sm"
                         :disabled="guideSaving[g.id]"
                         @click="cancelGuideEdit(g.id)"
                       >
@@ -547,10 +698,10 @@ async function deleteGuide(id: string) {
                       </button>
                     </template>
                     <template v-else>
-                      <button class="btn btn-sm" @click="startGuideEdit(g)">
+                      <button class="btn btn-xs sm:btn-sm" @click="startGuideEdit(g)">
                         Редактировать
                       </button>
-                      <button class="btn btn-sm btn-error" @click="deleteGuide(g.id)">
+                      <button class="btn btn-xs sm:btn-sm btn-error" @click="deleteGuide(g.id)">
                         Удалить
                       </button>
                     </template>

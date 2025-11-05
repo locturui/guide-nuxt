@@ -66,7 +66,7 @@ async function onDownloadSummary() {
 <template>
   <div
     data-theme="light"
-    class="bg-white text-gray-900 p-3 rounded shadow space-y-2 min-w-64"
+    class="bg-white text-gray-900 p-3 rounded shadow space-y-2 min-w-[14rem] max-w-[90vw]"
     @click.stop
   >
     <button
@@ -107,10 +107,10 @@ async function onDownloadSummary() {
     </div>
 
     <div class="flex justify-end gap-2 pt-1">
-      <button class="btn btn-sm btn-primary" @click="onConfirm">
+      <button class="btn btn-xs sm:btn-sm btn-primary" @click="onConfirm">
         Сохранить
       </button>
-      <button class="btn btn-sm" @click="$emit('cancel')">
+      <button class="btn btn-xs sm:btn-sm" @click="$emit('cancel')">
         Отмена
       </button>
     </div>

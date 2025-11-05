@@ -16,7 +16,7 @@ const emit = defineEmits<{
 <template>
   <div
     class="grid w-full gap-0"
-    style="grid-template-columns:40px repeat(7, minmax(0, 1fr));"
+    style="grid-template-columns:32px repeat(7, minmax(120px, 1fr));"
   >
     <div :class="ghostHeaders ? 'invisible pointer-events-none' : ''" />
 
@@ -41,7 +41,7 @@ const emit = defineEmits<{
     </div>
 
     <template v-for="time in times" :key="time">
-      <div class="text-right pr-2 text-xs text-gray-500">
+      <div class="text-right pr-2 text-[10px] sm:text-xs text-gray-500 select-none">
         {{ time }}
       </div>
       <div

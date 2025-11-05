@@ -88,25 +88,31 @@ const isDisabled = computed(() => {
 
 <template>
   <div
-    class="border border-gray-100 p-2 flex flex-col justify-between h-36 cursor-pointer transition-all duration-200 ease-in-out transform overflow-x-visible"
+    class="border p-2 sm:p-2.5 flex flex-col justify-between h-28 sm:h-36 cursor-pointer transition-all duration-200 ease-in-out transform overflow-x-visible"
     :class="[
       left <= 0 || isDisabled
         ? 'border-gray-100 bg-gray-200 text-gray-600'
         : 'border-gray-100 hover:bg-gray-100 hover:shadow-md hover:scale-105 hover:z-10 text-gray-600',
+      (new Date(start).toDateString() === new Date().toDateString()) && !isDisabled
+        ? 'bg-amber-50'
+        : '',
     ]"
     @click="() => {
       if (!isDisabled && (left > 0 || auth.role === 'admin')) onSelectSlot();
     }"
   >
-    <div class="text-sm font-medium">
+    <div class="text-xs sm:text-sm font-medium">
       {{ left }}/{{ limit }} свободно
     </div>
     <div v-if="bookings.length" class="flex flex-wrap gap-1 flex-1 overflow-auto overflow-x-visible mt-1 mb-1 pr-1 relative">
       <span
         v-for="b in bookingsWithStatus"
         :key="b.id"
-        class="badge p-1 text-xs cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:shadow-md relative hover:z-10"
-        :class="getBookingBadgeClass(b)"
+        class="badge px-1.5 py-0.5 text-[10px] sm:text-xs cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:shadow-md relative hover:z-10"
+        :class="[
+          getBookingBadgeClass(b),
+          b.immediate ? 'border-2 border-dashed border-amber-600 bg-amber-50 text-amber-800' : '',
+        ]"
         @click.stop="onSelectBooking({
           id: b.id,
           agentId: b.agentId,
@@ -119,7 +125,7 @@ const isDisabled = computed(() => {
         {{ b.agentName }} - {{ b.guests }}
       </span>
     </div>
-    <div class="text-xs text-gray-600">
+    <div class="text-[10px] sm:text-xs text-gray-600">
       {{ formatTime(start) }} - {{ formatTime(end) }}
     </div>
   </div>

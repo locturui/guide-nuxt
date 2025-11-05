@@ -45,8 +45,8 @@ async function save() {
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-60" @click="$emit('close')">
-    <div class="bg-white p-6 rounded-lg w-80 relative" @click.stop>
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4" @click="$emit('close')">
+    <div class="bg-white p-4 sm:p-6 rounded-lg w-full max-w-sm relative" @click.stop>
       <button
         class="absolute top-2 right-2 btn btn-sm btn-circle btn-ghost"
         @click="$emit('close')"

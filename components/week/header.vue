@@ -31,14 +31,14 @@ function jumpTo() {
 </script>
 
 <template>
-  <div class="flex justify-between mb-10" data-week-header>
-    <button class="btn btn-sm" @click="$emit('prev')">
+  <div class="flex items-center justify-between mb-6 md:mb-10 gap-2" data-week-header>
+    <button class="btn btn-xs sm:btn-sm" @click="$emit('prev')">
       Предыдущая
     </button>
 
     <div class="relative">
       <h2
-        class="font-bold cursor-pointer px-2 py-1 rounded-md shadow-[2px_2px_6px_#00000025] hover:shadow-[3px_3px_8px_#00000035] transition-shadow bg-white"
+        class="font-bold text-sm sm:text-base cursor-pointer px-2 py-1 rounded-md shadow-[2px_2px_6px_#00000025] hover:shadow-[3px_3px_8px_#00000035] transition-shadow bg-white"
         @click="show = true"
       >
         {{ rangeTitle }}
@@ -46,7 +46,7 @@ function jumpTo() {
 
       <div
         v-if="show"
-        class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-base-200 p-4 rounded shadow z-50 w-50"
+        class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-base-200 p-3 sm:p-4 rounded shadow z-50 w-64 sm:w-80"
       >
         <Datepicker
           v-model="jump"
@@ -59,17 +59,17 @@ function jumpTo() {
           :close-on-auto-apply="true"
         />
         <div class="flex justify-end mt-2 gap-2">
-          <button class="btn btn-sm btn-primary" @click="jumpTo">
+          <button class="btn btn-xs sm:btn-sm btn-primary" @click="jumpTo">
             Перейти
           </button>
-          <button class="btn btn-sm" @click="show = false">
+          <button class="btn btn-xs sm:btn-sm" @click="show = false">
             Отмена
           </button>
         </div>
       </div>
     </div>
 
-    <button class="btn btn-sm" @click="$emit('next')">
+    <button class="btn btn-xs sm:btn-sm" @click="$emit('next')">
       Следующая
     </button>
   </div>
