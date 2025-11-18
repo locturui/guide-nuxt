@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
     agencies: agencies.map((a: any) => ({
       agency_id: a.id,
       email: a.email,
-      name: a.name || a.email,
+      name: a.agencyName || a.email,
     })),
   };
 });

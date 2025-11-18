@@ -10,18 +10,6 @@ definePageMeta({
 const auth = useAuthStore();
 const isAdmin = computed(() => auth.role === "admin");
 const isAgency = computed(() => auth.role !== "admin");
-const telegramStatus = ref<{ id?: number | null; username?: string | null; link?: string | null } | null>(null);
-const telegramLink = computed(() => {
-  const u = telegramStatus.value?.username as string | undefined;
-  const id = telegramStatus.value?.id as number | undefined;
-  const handle = u || (id ? String(id) : undefined);
-  return handle ? `https://t.me/${handle}` : "#";
-});
-const linkLoading = ref(false);
-const linkError = ref("");
-const unlinkLoading = ref(false);
-const unlinkError = ref("");
-const unlinkSuccess = ref(false);
 
 const oldPassword = ref("");
 const newPassword = ref("");
@@ -29,7 +17,7 @@ const email = ref("");
 const name = ref("");
 const guideLastName = ref("");
 const guideFirstName = ref("");
-const guideBadge = ref("");
+const guideSearchQuery = ref("");
 
 const passwordSuccess = ref(false);
 const passwordError = ref("");
@@ -84,9 +72,6 @@ onMounted(() => {
   if (isAdmin.value) {
     agencies.fetchAgencies();
   }
-  if (isAgency.value || isAdmin.value) {
-    fetchMyAccount();
-  }
   if (isAgency.value) {
     guides.fetchGuides();
   }
@@ -97,37 +82,6 @@ watch(() => auth.role, (role) => {
     guides.fetchGuides();
   }
 });
-async function fetchMyAccount() {
-  try {
-    const me = await useApi<{ id: string; email: string; agency_name: string; telegram_id?: number | null; telegram_username?: string | null }>("/users/my");
-    telegramStatus.value = {
-      id: me.telegram_id ?? null,
-      username: me.telegram_username ?? null,
-      link: null,
-    };
-  }
-  catch {}
-}
-async function getTelegramLink() {
-  // eslint-disable-next-line no-console
-  console.log("getTelegramLink clicked");
-  linkError.value = "";
-  linkLoading.value = true;
-  try {
-    const { link } = await useApi<{ link: string }>("/telegram/link", { method: "POST" });
-    telegramStatus.value = { ...(telegramStatus.value || {}), link };
-    const opened = window.open(link, "_blank");
-    if (!opened) {
-      window.location.href = link;
-    }
-  }
-  catch (e: any) {
-    linkError.value = e?.data?.detail || e?.message || "Не удалось получить ссылку";
-  }
-  finally {
-    linkLoading.value = false;
-  }
-}
 
 type EditRow = { name: string; email: string };
 const editing: Record<string, EditRow> = reactive({});
@@ -135,7 +89,7 @@ const saving: Record<string, boolean> = reactive({});
 const rowError: Record<string, string> = reactive({});
 const rowSuccess: Record<string, string> = reactive({});
 
-type GuideEditRow = { name: string; lastname: string; badge_number: string };
+type GuideEditRow = { name: string; lastname: string };
 const guideEditing: Record<string, GuideEditRow> = reactive({});
 const guideSaving: Record<string, boolean> = reactive({});
 const guideRowError: Record<string, string> = reactive({});
@@ -212,8 +166,8 @@ watch(() => agencySuccess.value, (ok) => {
   }
 });
 
-function startGuideEdit(g: { id: string; name: string; lastname: string; badge_number: string }) {
-  guideEditing[g.id] = { name: g.name, lastname: g.lastname, badge_number: g.badge_number };
+function startGuideEdit(g: { id: string; name: string; lastname: string }) {
+  guideEditing[g.id] = { name: g.name, lastname: g.lastname };
   guideRowError[g.id] = "";
   guideRowSuccess[g.id] = "";
 }
@@ -224,7 +178,7 @@ function cancelGuideEdit(id: string) {
   guideRowSuccess[id] = "";
 }
 
-async function saveGuideRow(g: { id: string; name: string; lastname: string; badge_number: string }) {
+async function saveGuideRow(g: { id: string; name: string; lastname: string }) {
   const id = g.id;
   const draft = guideEditing[id];
   if (!draft) {
@@ -240,11 +194,8 @@ async function saveGuideRow(g: { id: string; name: string; lastname: string; bad
     if (!draft.lastname || draft.lastname.length > 100) {
       throw new Error("Фамилия должна быть от 1 до 100 символов");
     }
-    if (!draft.badge_number || draft.badge_number.length > 100) {
-      throw new Error("Номер бейджа обязателен и до 100 символов");
-    }
-    if (draft.name !== g.name || draft.lastname !== g.lastname || draft.badge_number !== g.badge_number) {
-      await guides.updateGuide(id, draft.name, draft.lastname, draft.badge_number);
+    if (draft.name !== g.name || draft.lastname !== g.lastname) {
+      await guides.updateGuide(id, draft.name, draft.lastname);
     }
     guideRowSuccess[id] = "Сохранено";
     delete guideEditing[id];
@@ -270,14 +221,10 @@ async function createGuide() {
     if (!lastName || lastName.length > 100) {
       throw new Error("Фамилия должна быть от 1 до 100 символов");
     }
-    if (!guideBadge.value || guideBadge.value.length > 100) {
-      throw new Error("Номер бейджа обязателен и до 100 символов");
-    }
-    await guides.createGuide(firstName, lastName, guideBadge.value);
+    await guides.createGuide(firstName, lastName);
     guideSuccess.value = true;
     guideLastName.value = "";
     guideFirstName.value = "";
-    guideBadge.value = "";
   }
   catch (e: any) {
     guideError.value = e?.data?.detail || e?.message || "Не удалось создать гида";
@@ -295,436 +242,480 @@ async function deleteGuide(id: string) {
     guideRowError[id] = e?.data?.detail || e?.message || "Не удалось удалить гида";
   }
 }
-async function unlinkTelegram() {
-  unlinkError.value = "";
-  unlinkSuccess.value = false;
-  unlinkLoading.value = true;
-  try {
-    await useApi("/telegram/unlink", { method: "POST" });
-    telegramStatus.value = { id: null, username: null, link: null };
-    try {
-      await fetchMyAccount();
-    }
-    catch {}
-    unlinkSuccess.value = true;
-  }
-  catch (e: any) {
-    unlinkError.value = e?.data?.detail || e?.message || "Не удалось отключиться";
-  }
-  finally {
-    unlinkLoading.value = false;
-  }
-}
 
-let tgPollInterval: ReturnType<typeof setInterval> | null = null;
-function startTelegramLinkPolling() {
-  try {
-    if (tgPollInterval) {
-      clearInterval(tgPollInterval);
-    }
+const filteredGuides = computed(() => {
+  if (!guideSearchQuery.value.trim()) {
+    return guides.items;
   }
-  catch {}
-  tgPollInterval = setInterval(async () => {
-    try {
-      await fetchMyAccount();
-      if (telegramStatus.value && telegramStatus.value.id) {
-        if (tgPollInterval) {
-          clearInterval(tgPollInterval);
-          tgPollInterval = null;
-        }
-      }
-    }
-    catch {}
-  }, 5000);
-}
-try {
-  onUnmounted(() => {
-    if (tgPollInterval) {
-      clearInterval(tgPollInterval);
-      tgPollInterval = null;
-    }
-  });
-}
-catch {}
+  const query = guideSearchQuery.value.trim().toLowerCase();
+  return guides.items.filter(g =>
+    g.lastname.toLowerCase().includes(query) || g.name.toLowerCase().includes(query),
+  );
+});
 </script>
 
 <template>
-  <div class="w-full min-h-screen bg-gray-50 py-12 md:py-16 px-4 sm:px-6 md:px-12">
+  <div class="w-full min-h-screen bg-surface-ground py-8 px-4 sm:px-6 md:px-8">
     <div class="max-w-6xl mx-auto">
-      <header class="mb-12 text-center">
-        <h1 class="text-3xl font-semibold text-gray-900">
+      <header class="mb-8">
+        <h1 class="text-3xl font-semibold text-surface-900 mb-2">
           Настройки аккаунта
         </h1>
-        <p class="text-sm text-gray-500 mt-2">
+        <p class="text-sm text-surface-600">
           Управляйте вашим паролем{{ isAdmin ? " и агентствами" : "" }} ниже.
         </p>
       </header>
 
-      <div class="grid md:grid-cols-2 gap-8 md:gap-16">
-        <section class="flex-1 space-y-6 max-w-md w-full">
-          <h2 class="text-xl font-medium text-gray-800 border-b pb-2">
-            Сменить пароль
-          </h2>
-          <div class="space-y-4">
-            <div>
-              <label class="block text-sm text-gray-600 mb-1">Старый пароль</label>
-              <input
-                v-model="oldPassword"
-                type="password"
-                class="input input-bordered input-sm md:input-md w-full"
-              >
+      <div class="grid md:grid-cols-2 gap-6">
+        <Card>
+          <template #title>
+            <span class="text-xl font-semibold">Сменить пароль</span>
+          </template>
+          <template #content>
+            <div class="space-y-4">
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-medium text-surface-700">Старый пароль</label>
+                <Password
+                  v-model="oldPassword"
+                  :feedback="false"
+                  toggle-mask
+                  class="w-full"
+                  input-class="w-full"
+                />
+              </div>
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-medium text-surface-700">Новый пароль</label>
+                <Password
+                  v-model="newPassword"
+                  :feedback="false"
+                  toggle-mask
+                  class="w-full"
+                  input-class="w-full"
+                />
+              </div>
+              <div class="flex items-center gap-3">
+                <Button
+                  label="Обновить пароль"
+                  icon="pi pi-key"
+                  @click="changePassword"
+                />
+                <Message
+                  v-if="passwordSuccess"
+                  severity="success"
+                  class="m-0"
+                >
+                  Успех
+                </Message>
+                <Message
+                  v-if="passwordError"
+                  severity="error"
+                  class="m-0"
+                >
+                  {{ passwordError }}
+                </Message>
+              </div>
             </div>
-            <div>
-              <label class="block text-sm text-gray-600 mb-1">Новый пароль</label>
-              <input
-                v-model="newPassword"
-                type="password"
-                class="input input-bordered input-sm md:input-md w-full"
-              >
-            </div>
-          </div>
-          <div class="flex items-center gap-3">
-            <button class="btn btn-primary btn-sm md:btn-md" @click="changePassword">
-              Обновить пароль
-            </button>
-            <span v-if="passwordSuccess" class="text-green-600 text-sm">✓ Успех</span>
-            <span v-if="passwordError" class="text-red-600 text-sm">⚠ {{ passwordError }}</span>
-          </div>
-        </section>
+          </template>
+        </Card>
 
-        <section
+        <Card
           v-if="isAdmin"
-          class="flex-1 space-y-6 max-w-md w-full"
         >
-          <h2 class="text-xl font-medium text-gray-800 border-b pb-2">
-            Создать агентство
-          </h2>
-          <div class="space-y-4">
-            <div>
-              <label class="block text-sm text-gray-600 mb-1">Email агентства</label>
-              <input
-                v-model="email"
-                type="email"
-                class="input input-bordered input-sm md:input-md w-full"
-              >
+          <template #title>
+            <span class="text-xl font-semibold">Создать агентство</span>
+          </template>
+          <template #content>
+            <div class="space-y-4">
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-medium text-surface-700">Email агентства</label>
+                <InputText
+                  v-model="email"
+                  type="email"
+                  class="w-full"
+                />
+              </div>
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-medium text-surface-700">Название агентства</label>
+                <InputText
+                  v-model="name"
+                  type="text"
+                  class="w-full"
+                />
+              </div>
+              <div class="flex items-center gap-3">
+                <Button
+                  label="Создать агентство"
+                  icon="pi pi-plus"
+                  severity="secondary"
+                  @click="createAgency"
+                />
+                <Message
+                  v-if="agencySuccess"
+                  severity="success"
+                  class="m-0"
+                >
+                  Успех
+                </Message>
+                <Message
+                  v-if="agencyError"
+                  severity="error"
+                  class="m-0"
+                >
+                  {{ agencyError }}
+                </Message>
+              </div>
             </div>
-            <div>
-              <label class="block text-sm text-gray-600 mb-1">Название агентства</label>
-              <input
-                v-model="name"
-                type="text"
-                class="input input-bordered input-sm md:input-md w-full"
-              >
-            </div>
-          </div>
-          <div class="flex items-center gap-3">
-            <button class="btn btn-secondary btn-sm md:btn-md" @click="createAgency">
-              Создать агентство
-            </button>
-            <span v-if="agencySuccess" class="text-green-600 text-sm">✓ Успех</span>
-            <span v-if="agencyError" class="text-red-600 text-sm">⚠ {{ agencyError }}</span>
-          </div>
-        </section>
+          </template>
+        </Card>
 
-        <section v-if="isAgency || isAdmin" class="flex-1 space-y-6 max-w-md w-full">
-          <h2 class="text-xl font-medium text-gray-800 border-b pb-2">
-            Telegram
-          </h2>
-          <div class="space-y-4">
-            <div v-if="telegramStatus?.id">
-              <div class="bg-white border rounded-lg p-4 flex items-center justify-between gap-4">
-                <p>
-                  Подключен аккаунт:
-                  <strong>
-                    <a
-                      :href="telegramLink"
-                      target="_blank"
-                      rel="noopener noreferrer"
+        <Card
+          v-if="isAdmin"
+        >
+          <template #title>
+            <span class="text-xl font-semibold">Все агентства</span>
+          </template>
+          <template #content>
+            <ProgressSpinner
+              v-if="agencies.loading"
+              class="mx-auto"
+            />
+            <Message
+              v-else-if="agencies.error"
+              severity="error"
+            >
+              {{ agencies.error }}
+            </Message>
+            <div
+              v-else
+              class="rounded-lg overflow-hidden flex flex-col"
+              style="max-height: 24rem; border: 1px solid rgb(243 244 246);"
+            >
+              <div class="overflow-y-auto flex-1">
+                <div
+                  v-if="!agencies.items.length"
+                  class="p-4 text-center text-surface-500"
+                >
+                  Нет агентств.
+                </div>
+                <div
+                  v-for="a in agencies.items"
+                  :key="a.agency_id"
+                  class="p-3 hover:bg-surface-50 transition-colors"
+                  :style="a !== agencies.items[agencies.items.length - 1] ? 'border-bottom: 1px solid rgb(243 244 246);' : ''"
+                >
+                  <template v-if="editing[a.agency_id]">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                      <div class="flex flex-col gap-1">
+                        <label class="text-xs font-medium text-surface-600">Название</label>
+                        <InputText
+                          v-model="editing[a.agency_id].name"
+                          type="text"
+                          size="small"
+                          class="w-full"
+                          :disabled="saving[a.agency_id]"
+                        />
+                      </div>
+                      <div class="flex flex-col gap-1">
+                        <label class="text-xs font-medium text-surface-600">Email</label>
+                        <InputText
+                          v-model="editing[a.agency_id].email"
+                          type="email"
+                          size="small"
+                          class="w-full"
+                          :disabled="saving[a.agency_id]"
+                        />
+                      </div>
+                    </div>
+                    <div class="flex gap-2 justify-end">
+                      <Button
+                        label="Сохранить"
+                        icon="pi pi-check"
+                        size="small"
+                        :loading="saving[a.agency_id]"
+                        :disabled="saving[a.agency_id]"
+                        @click="saveRow(a)"
+                      />
+                      <Button
+                        label="Отмена"
+                        icon="pi pi-times"
+                        text
+                        severity="secondary"
+                        size="small"
+                        :disabled="saving[a.agency_id]"
+                        @click="cancelEdit(a.agency_id)"
+                      />
+                    </div>
+                    <Message
+                      v-if="rowSuccess[a.agency_id]"
+                      severity="success"
+                      class="mt-2 text-xs"
                     >
-                      @{{ telegramStatus?.username || telegramStatus?.id }}
-                    </a>
-                  </strong>
-                </p>
-                <div class="flex gap-2 items-center justify-end flex-wrap">
-                  <button
-                    type="button"
-                    class="btn btn-error btn-sm md:btn-md"
-                    :disabled="unlinkLoading"
-                    @click.stop.prevent="unlinkTelegram()"
-                  >
-                    {{ unlinkLoading ? "Обработка..." : "Отключить" }}
-                  </button>
+                      {{ rowSuccess[a.agency_id] }}
+                    </Message>
+                    <Message
+                      v-else-if="rowError[a.agency_id]"
+                      severity="error"
+                      class="mt-2 text-xs"
+                    >
+                      {{ rowError[a.agency_id] }}
+                    </Message>
+                  </template>
+                  <template v-else>
+                    <div class="flex items-center justify-between gap-3">
+                      <div class="flex-1 min-w-0">
+                        <div class="font-medium text-surface-900 truncate">
+                          {{ a.name }}
+                        </div>
+                        <div class="text-sm text-surface-600 truncate">
+                          {{ a.email }}
+                        </div>
+                      </div>
+                      <div class="flex gap-2 flex-shrink-0">
+                        <Button
+                          icon="pi pi-pencil"
+                          text
+                          rounded
+                          size="small"
+                          @click="startEdit(a)"
+                        />
+                        <Button
+                          icon="pi pi-trash"
+                          text
+                          rounded
+                          severity="danger"
+                          size="small"
+                          @click="deleteAgency(a.agency_id)"
+                        />
+                      </div>
+                    </div>
+                    <Message
+                      v-if="rowSuccess[a.agency_id]"
+                      severity="success"
+                      class="mt-2 text-xs"
+                    >
+                      {{ rowSuccess[a.agency_id] }}
+                    </Message>
+                    <Message
+                      v-else-if="rowError[a.agency_id]"
+                      severity="error"
+                      class="mt-2 text-xs"
+                    >
+                      {{ rowError[a.agency_id] }}
+                    </Message>
+                  </template>
                 </div>
               </div>
-
-              <p v-if="unlinkError" class="text-red-600 text-sm mt-2">
-                {{ unlinkError }}
-              </p>
             </div>
-            <div v-else>
-              <p class="text-sm text-gray-600 mb-2">
-                Подключите ваш аккаунт Telegram, чтобы получать уведомления.
-              </p>
-              <button
-                type="button"
-                class="btn btn-secondary btn-sm md:btn-md"
-                :disabled="linkLoading"
-                @click.stop.prevent="getTelegramLink(); startTelegramLinkPolling()"
-              >
-                {{ linkLoading ? "Генерация..." : "Подключить Telegram" }}
-              </button>
-              <p v-if="linkError" class="text-red-600 text-sm mt-2">
-                {{ linkError }}
-              </p>
-            </div>
-          </div>
-        </section>
-        <section v-if="isAdmin" class="mt-16">
-          <h2 class="text-xl font-medium text-gray-800 border-b pb-2 mb-4">
-            Все агентства
-          </h2>
+          </template>
+        </Card>
+      </div>
 
-          <div v-if="agencies.loading" class="text-gray-500">
-            Загрузка…
-          </div>
-          <div v-else-if="agencies.error" class="text-red-600">
-            ⚠ {{ agencies.error }}
-          </div>
-
-          <div v-else class="space-y-3">
-            <div
-              v-for="a in agencies.items"
-              :key="a.agency_id"
-              class="bg-white rounded-lg border p-4 grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-center"
-            >
-              <div>
-                <label class="block text-xs text-gray-500 mb-1">Название</label>
-                <template v-if="editing[a.agency_id]">
-                  <input
-                    v-model="editing[a.agency_id].name"
-                    type="text"
-                    class="input input-bordered input-sm md:input-md w-full"
-                    :disabled="saving[a.agency_id]"
-                  >
-                </template>
-                <template v-else>
-                  <div class="text-gray-900">
-                    {{ a.name }}
-                  </div>
-                </template>
-              </div>
-
-              <div>
-                <label class="block text-xs text-gray-500 mb-1">Email</label>
-                <template v-if="editing[a.agency_id]">
-                  <input
-                    v-model="editing[a.agency_id].email"
-                    type="email"
-                    class="input input-bordered input-sm md:input-md w-full"
-                    :disabled="saving[a.agency_id]"
-                  >
-                </template>
-                <template v-else>
-                  <div class="text-gray-900 break-all">
-                    {{ a.email }}
-                  </div>
-                </template>
-              </div>
-
-              <div class="flex gap-2 justify-start md:justify-end">
-                <template v-if="editing[a.agency_id]">
-                  <button
-                    class="btn btn-xs sm:btn-sm btn-primary"
-                    :disabled="saving[a.agency_id]"
-                    @click="saveRow(a)"
-                  >
-                    {{ saving[a.agency_id] ? 'Сохранение…' : 'Сохранить' }}
-                  </button>
-                  <button
-                    class="btn btn-xs sm:btn-sm"
-                    :disabled="saving[a.agency_id]"
-                    @click="cancelEdit(a.agency_id)"
-                  >
-                    Отмена
-                  </button>
-                </template>
-                <template v-else>
-                  <button class="btn btn-xs sm:btn-sm" @click="startEdit(a)">
-                    Редактировать
-                  </button>
-                  <button class="btn btn-xs sm:btn-sm btn-error" @click="deleteAgency(a.agency_id)">
-                    Удалить
-                  </button>
-                </template>
-              </div>
-
-              <div class="md:col-span-3 -mt-1">
-                <span v-if="rowSuccess[a.agency_id]" class="text-green-600 text-sm">
-                  ✓ {{ rowSuccess[a.agency_id] }}
-                </span>
-                <span v-else-if="rowError[a.agency_id]" class="text-red-600 text-sm">
-                  ⚠ {{ rowError[a.agency_id] }}
-                </span>
-              </div>
-            </div>
-
-            <div v-if="!agencies.items.length" class="text-gray-500">
-              Нет агентств.
-            </div>
-          </div>
-        </section>
-
-        <section v-if="isAgency" class="md:col-span-2">
-          <h2 class="text-xl font-medium text-gray-800 border-b pb-2 mb-4">
-            Гиды агентства
-          </h2>
-
+      <Card
+        v-if="isAgency"
+        class="mt-6"
+      >
+        <template #title>
+          <span class="text-xl font-semibold">Гиды агентства</span>
+        </template>
+        <template #content>
           <div class="grid md:grid-cols-2 gap-6 md:gap-8">
             <div class="space-y-4 max-w-md w-full">
               <h3 class="text-lg font-medium">
                 Добавить гида
               </h3>
               <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="block text-sm text-gray-600 mb-1">Фамилия</label>
-                  <input
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-medium text-surface-700">Фамилия</label>
+                  <InputText
                     v-model="guideLastName"
                     type="text"
-                    class="input input-bordered input-sm md:input-md w-full"
                     placeholder="Фамилия"
-                  >
+                    class="w-full"
+                  />
                 </div>
-                <div>
-                  <label class="block text-sm text-gray-600 mb-1">Имя</label>
-                  <input
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-medium text-surface-700">Имя</label>
+                  <InputText
                     v-model="guideFirstName"
                     type="text"
-                    class="input input-bordered input-sm md:input-md w-full"
                     placeholder="Имя"
-                  >
+                    class="w-full"
+                  />
                 </div>
               </div>
-              <div>
-                <label class="block text-sm text-gray-600 mb-1">Номер бейджа</label>
-                <input
-                  v-model="guideBadge"
-                  type="text"
-                  class="input input-bordered input-sm md:input-md w-full"
-                >
-              </div>
               <div class="flex items-center gap-3">
-                <button class="btn btn-secondary btn-sm md:btn-md" @click="createGuide">
-                  Добавить
-                </button>
-                <span v-if="guideSuccess" class="text-green-600 text-sm">✓ Успех</span>
-                <span v-if="guideError" class="text-red-600 text-sm">⚠ {{ guideError }}</span>
+                <Button
+                  label="Добавить"
+                  icon="pi pi-plus"
+                  severity="secondary"
+                  size="small"
+                  @click="createGuide"
+                />
+                <Message
+                  v-if="guideSuccess"
+                  severity="success"
+                  class="m-0"
+                >
+                  Успех
+                </Message>
+                <Message
+                  v-if="guideError"
+                  severity="error"
+                  class="m-0"
+                >
+                  {{ guideError }}
+                </Message>
               </div>
             </div>
 
-            <div>
-              <div v-if="guides.loading" class="text-gray-500">
-                Загрузка…
+            <div class="flex flex-col gap-3 min-w-0">
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-medium text-surface-700">Поиск по фамилии</label>
+                <IconField icon-position="left">
+                  <InputIcon>
+                    <i class="pi pi-search" />
+                  </InputIcon>
+                  <InputText
+                    v-model="guideSearchQuery"
+                    type="text"
+                    placeholder="Введите фамилию..."
+                    class="w-full"
+                  />
+                </IconField>
               </div>
-              <div v-else-if="guides.error" class="text-red-600">
-                ⚠ {{ guides.error }}
-              </div>
-              <div v-else class="space-y-3">
-                <div
-                  v-for="g in guides.items"
-                  :key="g.id"
-                  class="bg-white rounded-lg border p-4 grid gap-3"
-                >
-                  <template v-if="guideEditing[g.id]">
-                    <div class="grid grid-cols-2 gap-3">
-                      <div>
-                        <label class="block text-xs text-gray-500 mb-1">Фамилия</label>
-                        <input
-                          v-model="guideEditing[g.id].lastname"
-                          type="text"
-                          class="input input-bordered w-full"
-                          :disabled="guideSaving[g.id]"
-                        >
-                      </div>
-                      <div>
-                        <label class="block text-xs text-gray-500 mb-1">Имя</label>
-                        <input
-                          v-model="guideEditing[g.id].name"
-                          type="text"
-                          class="input input-bordered w-full"
-                          :disabled="guideSaving[g.id]"
-                        >
-                      </div>
-                    </div>
-                    <div>
-                      <label class="block text-xs text-gray-500 mb-1">Бейдж</label>
-                      <input
-                        v-model="guideEditing[g.id].badge_number"
-                        type="text"
-                        class="input input-bordered input-sm md:input-md w-full"
-                        :disabled="guideSaving[g.id]"
-                      >
-                    </div>
-                  </template>
-                  <template v-else>
-                    <div>
-                      <label class="block text-xs text-gray-500 mb-1">ФИО</label>
-                      <div class="text-gray-900">
-                        {{ g.lastname }} {{ g.name }}
-                      </div>
-                    </div>
-                    <div>
-                      <label class="block text-xs text-gray-500 mb-1">Бейдж</label>
-                      <div class="text-gray-900 break-all">
-                        {{ g.badge_number }}
-                      </div>
-                    </div>
-                  </template>
 
-                  <div class="flex gap-2 justify-start md:justify-end">
+              <ProgressSpinner
+                v-if="guides.loading"
+                class="mx-auto"
+              />
+              <Message
+                v-else-if="guides.error"
+                severity="error"
+              >
+                {{ guides.error }}
+              </Message>
+              <div
+                v-else
+                class="rounded-lg overflow-hidden flex flex-col"
+                style="max-height: 24rem; border: 1px solid rgb(243 244 246);"
+              >
+                <div class="overflow-y-auto flex-1">
+                  <div
+                    v-if="filteredGuides.length === 0"
+                    class="p-4 text-center text-surface-500"
+                  >
+                    {{ guideSearchQuery ? 'Гиды не найдены' : 'Нет гидов' }}
+                  </div>
+                  <div
+                    v-for="g in filteredGuides"
+                    :key="g.id"
+                    class="p-3 hover:bg-surface-50 transition-colors"
+                    style="border-bottom: 1px solid rgb(243 244 246);"
+                  >
                     <template v-if="guideEditing[g.id]">
-                      <button
-                        class="btn btn-xs sm:btn-sm btn-primary"
-                        :disabled="guideSaving[g.id]"
-                        @click="saveGuideRow(g)"
+                      <div class="grid grid-cols-2 gap-3 mb-3">
+                        <div class="flex flex-col gap-1">
+                          <label class="text-xs font-medium text-surface-600">Фамилия</label>
+                          <InputText
+                            v-model="guideEditing[g.id].lastname"
+                            type="text"
+                            size="small"
+                            class="w-full"
+                            :disabled="guideSaving[g.id]"
+                          />
+                        </div>
+                        <div class="flex flex-col gap-1">
+                          <label class="text-xs font-medium text-surface-600">Имя</label>
+                          <InputText
+                            v-model="guideEditing[g.id].name"
+                            type="text"
+                            size="small"
+                            class="w-full"
+                            :disabled="guideSaving[g.id]"
+                          />
+                        </div>
+                      </div>
+                      <div class="flex gap-2 justify-end">
+                        <Button
+                          label="Сохранить"
+                          icon="pi pi-check"
+                          size="small"
+                          :loading="guideSaving[g.id]"
+                          :disabled="guideSaving[g.id]"
+                          @click="saveGuideRow(g)"
+                        />
+                        <Button
+                          label="Отмена"
+                          icon="pi pi-times"
+                          text
+                          severity="secondary"
+                          size="small"
+                          :disabled="guideSaving[g.id]"
+                          @click="cancelGuideEdit(g.id)"
+                        />
+                      </div>
+                      <Message
+                        v-if="guideRowSuccess[g.id]"
+                        severity="success"
+                        class="mt-2 text-xs"
                       >
-                        {{ guideSaving[g.id] ? 'Сохранение…' : 'Сохранить' }}
-                      </button>
-                      <button
-                        class="btn btn-xs sm:btn-sm"
-                        :disabled="guideSaving[g.id]"
-                        @click="cancelGuideEdit(g.id)"
+                        {{ guideRowSuccess[g.id] }}
+                      </Message>
+                      <Message
+                        v-else-if="guideRowError[g.id]"
+                        severity="error"
+                        class="mt-2 text-xs"
                       >
-                        Отмена
-                      </button>
+                        {{ guideRowError[g.id] }}
+                      </Message>
                     </template>
                     <template v-else>
-                      <button class="btn btn-xs sm:btn-sm" @click="startGuideEdit(g)">
-                        Редактировать
-                      </button>
-                      <button class="btn btn-xs sm:btn-sm btn-error" @click="deleteGuide(g.id)">
-                        Удалить
-                      </button>
+                      <div class="flex items-center justify-between">
+                        <div class="flex-1">
+                          <div class="font-medium text-surface-900">
+                            {{ g.lastname }} {{ g.name }}
+                          </div>
+                        </div>
+                        <div class="flex gap-2">
+                          <Button
+                            icon="pi pi-pencil"
+                            text
+                            rounded
+                            size="small"
+                            @click="startGuideEdit(g)"
+                          />
+                          <Button
+                            icon="pi pi-trash"
+                            text
+                            rounded
+                            severity="danger"
+                            size="small"
+                            @click="deleteGuide(g.id)"
+                          />
+                        </div>
+                      </div>
+                      <Message
+                        v-if="guideRowSuccess[g.id]"
+                        severity="success"
+                        class="mt-2 text-xs"
+                      >
+                        {{ guideRowSuccess[g.id] }}
+                      </Message>
+                      <Message
+                        v-else-if="guideRowError[g.id]"
+                        severity="error"
+                        class="mt-2 text-xs"
+                      >
+                        {{ guideRowError[g.id] }}
+                      </Message>
                     </template>
                   </div>
-
-                  <div class="md:col-span-3 -mt-1">
-                    <span v-if="guideRowSuccess[g.id]" class="text-green-600 text-sm">
-                      ✓ {{ guideRowSuccess[g.id] }}
-                    </span>
-                    <span v-else-if="guideRowError[g.id]" class="text-red-600 text-sm">
-                      ⚠ {{ guideRowError[g.id] }}
-                    </span>
-                  </div>
-                </div>
-
-                <div v-if="!guides.items.length" class="text-gray-500">
-                  Нет гидов.
                 </div>
               </div>
             </div>
           </div>
-        </section>
-      </div>
+        </template>
+      </Card>
     </div>
   </div>
 </template>

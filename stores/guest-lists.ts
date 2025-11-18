@@ -23,7 +23,7 @@ export type GuestList = {
   created_at: string;
   updated_at: string;
   guests: Guest[];
-  guide_id?: string;
+  guide_ids?: string[];
 };
 
 type BookingGuestListState = {

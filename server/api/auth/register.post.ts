@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
   await db.insert(schema.users).values({
     email,
     password: hashedPassword,
-    role: "agency", // New registrations are agencies by default
+    role: "agency",
     name: name || email,
   });
 

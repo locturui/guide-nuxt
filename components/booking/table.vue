@@ -54,18 +54,52 @@ function jumpWeek(d: Date): void {
 }
 
 const dayDropdown = ref<string | null>(null);
+const dayDropdownRef = ref<HTMLElement | null>(null);
+const isMobile = ref(false);
 const viewMode = ref<"grid" | "timeline">("grid");
 const fmt = (d: Date): string => formattedDate(d);
+
+function checkMobile() {
+  isMobile.value = window.innerWidth < 768;
+  if (isMobile.value) {
+    viewMode.value = "timeline";
+  }
+  else {
+    viewMode.value = "grid";
+  }
+}
 
 function forceGridOnDesktop() {
   if (window.innerWidth >= 768) {
     viewMode.value = "grid";
+  }
+  else {
+    viewMode.value = "timeline";
   }
 }
 
 function toggleDay(d: Date): void {
   const key = fmt(d);
   dayDropdown.value = dayDropdown.value === key ? null : key;
+}
+
+function handleDayDropdownClickOutside(event: MouseEvent) {
+  const target = event.target as HTMLElement;
+  if (!dayDropdown.value)
+    return;
+
+  const clickedDayHeader = target.closest("[data-day-header]");
+  if (clickedDayHeader)
+    return;
+
+  const dropdownCard = target.closest(".p-card");
+  if (dropdownCard) {
+    const hasDropdown = dropdownCard.querySelector(".p-dropdown");
+    if (hasDropdown)
+      return;
+  }
+
+  dayDropdown.value = null;
 }
 
 async function confirmDay(
@@ -115,15 +149,23 @@ async function openCreate({ date, time }: { date: string; time: string }) {
     limitModal.value = { date, time, limit };
     return;
   }
-  const today = formattedDate(new Date());
-  if (date === today) {
-    const now = new Date();
+  const now = new Date();
+  const todayStr = formattedDate(now);
+  if (date === todayStr) {
     const [h, m] = time.split(":").map(Number);
     const slot = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
     if (slot > now) {
       await navigateTo(`/booking/immediate?date=${date}&time=${time}`);
       return;
     }
+  }
+  const wanted = new Date(`${date}T00:00:00`);
+  const prev = new Date(wanted);
+  prev.setDate(prev.getDate() - 1);
+  const cutoff = new Date(prev.getFullYear(), prev.getMonth(), prev.getDate(), 20, 0, 0, 0);
+  if (now >= cutoff) {
+    await navigateTo(`/booking/immediate?date=${date}&time=${time}`);
+    return;
   }
   editingBooking.value = null;
   initialSlot.value = { date, time };
@@ -158,39 +200,121 @@ function onFloatingWheel(e: WheelEvent) {
 
 function updateFloating() {
   const s = sentinelRef.value;
-  if (!s) {
+  if (!s)
+    return;
+  showFloating.value = s.getBoundingClientRect().top <= stickyTop.value;
+  if (!showFloating.value) {
+    floatLeft.value = 0;
+    floatWidth.value = 0;
+    floatTranslateX.value = 0;
     return;
   }
-  showFloating.value = s.getBoundingClientRect().top <= stickyTop.value;
+  const el = scrollerRef.value;
+  if (!el)
+    return;
+  const rect2 = el.getBoundingClientRect();
+  floatLeft.value = rect2.left;
+  floatWidth.value = rect2.width;
+  floatTranslateX.value = -el.scrollLeft;
 }
 
 function updateFloatingLayout() {
   const el = scrollerRef.value;
-  if (!el) {
+  if (!el)
     return;
-  }
   const rect = el.getBoundingClientRect();
   floatLeft.value = rect.left;
   floatWidth.value = rect.width;
   floatTranslateX.value = -el.scrollLeft;
 }
 
+function calculateStickyTop() {
+  const weekHeader = document.querySelector("[data-week-header]");
+  if (weekHeader) {
+    const weekHeaderRect = weekHeader.getBoundingClientRect();
+    stickyTop.value = weekHeaderRect.height;
+  }
+  else if (headerRef.value) {
+    const rect = headerRef.value.getBoundingClientRect();
+    stickyTop.value = rect.height;
+  }
+  else {
+    stickyTop.value = 100;
+  }
+}
+
+watch(dayDropdown, (isOpen) => {
+  if (isOpen) {
+    setTimeout(() => {
+      document.addEventListener("click", handleDayDropdownClickOutside);
+    }, 0);
+  }
+  else {
+    document.removeEventListener("click", handleDayDropdownClickOutside);
+  }
+});
+
 onMounted(() => {
-  stickyTop.value = 10;
+  checkMobile();
   forceGridOnDesktop();
+
+  const recalculate = () => {
+    requestAnimationFrame(() => {
+      calculateStickyTop();
+      updateFloating();
+      updateFloatingLayout();
+    });
+  };
+
+  nextTick(() => {
+    recalculate();
+  });
 
   window.addEventListener("scroll", updateFloating, { passive: true });
   window.addEventListener("resize", () => {
+    checkMobile();
     forceGridOnDesktop();
-    updateFloating();
-    updateFloatingLayout();
+    recalculate();
   });
 
   scrollerRef.value?.addEventListener("scroll", updateFloatingLayout, { passive: true });
 
+  nextTick(() => {
+    const weekHeader = document.querySelector("[data-week-header]");
+    if (weekHeader) {
+      const resizeObserver = new ResizeObserver(() => {
+        recalculate();
+      });
+      resizeObserver.observe(weekHeader);
+
+      onBeforeUnmount(() => {
+        resizeObserver.disconnect();
+      });
+    }
+    else if (headerRef.value) {
+      const resizeObserver = new ResizeObserver(() => {
+        recalculate();
+      });
+      resizeObserver.observe(headerRef.value);
+
+      onBeforeUnmount(() => {
+        resizeObserver.disconnect();
+      });
+    }
+  });
+
+  setTimeout(() => {
+    recalculate();
+  }, 200);
+
+  setTimeout(() => {
+    recalculate();
+  }, 500);
+
   requestAnimationFrame(() => {
-    updateFloating();
-    updateFloatingLayout();
+    requestAnimationFrame(() => {
+      recalculate();
+    });
   });
 });
 
@@ -198,6 +322,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("scroll", updateFloating);
   window.removeEventListener("resize", () => {});
   scrollerRef.value?.removeEventListener("scroll", updateFloatingLayout);
+  document.removeEventListener("click", handleDayDropdownClickOutside);
 });
 
 watch(stickyTop, () => requestAnimationFrame(updateFloating));
@@ -209,7 +334,7 @@ watch(viewMode, () => {
 
 <template>
   <div
-    class="p-4 w-full px-4 sm:px-6 md:px-10 lg:px-15 pt-4 md:pt-5"
+    class="w-full px-2 py-2 sm:px-4 sm:py-4 md:px-10 md:py-5 lg:px-15"
     :style="{ '--tg-sticky-top': `${stickyTop}px` }"
   >
     <div ref="headerRef">
@@ -219,61 +344,88 @@ watch(viewMode, () => {
         @next="nextWeek"
         @jump="jumpWeek"
       />
-      <div class="flex items-center gap-3 mt-3 mb-4 md:hidden">
-        <button
-          class="btn btn-sm md:btn-md"
-          :class="viewMode === 'grid' ? 'btn-primary' : ''"
-          @click="viewMode = 'grid'"
-        >
-          Сетка
-        </button>
-        <button
-          class="btn btn-sm md:btn-md"
-          :class="viewMode === 'timeline' ? 'btn-primary' : ''"
-          @click="viewMode = 'timeline'"
-        >
-          Таймлайн
-        </button>
-      </div>
 
-      <div v-if="s.loading" class="flex justify-center items-center py-20">
-        <span class="loading loading-spinner loading-lg" />
+      <div
+        v-if="s.loading"
+        class="flex justify-center items-center py-20"
+      >
+        <ProgressSpinner />
       </div>
 
       <div ref="sentinelRef" style="height:0; margin:0; padding:0;" />
 
       <div
-        v-if="viewMode === 'grid'"
-        ref="scrollerRef"
-        class="w-full overflow-x-auto"
+        v-if="viewMode === 'grid' && !isMobile"
+        class="w-full"
       >
-        <TimeGrid
+        <div
           v-if="!s.loading"
-          :days="days"
-          :times="s.allTimes"
-          :role="role"
-          :ghost-headers="showFloating"
-          @toggle-day="toggleDay"
-          @select-slot="openCreate"
-          @select-booking="openEdit"
+          class="grid w-full gap-2 mb-2"
+          :class="[
+            showFloating ? 'invisible pointer-events-none' : '',
+            role === 'admin' ? '' : 'py-3',
+          ]"
+          :style="{
+            gridTemplateColumns: '32px repeat(7, minmax(120px, 1fr))',
+            position: 'sticky',
+            top: '0px',
+            zIndex: 50,
+            background: 'white',
+          }"
         >
-          <template #day-dropdown="{ date }">
-            <transition name="modal-fade">
-              <div v-if="role === 'admin' && dayDropdown === fmt(date)">
-                <DayCategoryDropdown
-                  :date-str="fmt(date)"
-                  :model-value="dayDropdown"
-                  @confirm="p => confirmDay(fmt(date), p)"
-                  @cancel="dayDropdown = null"
-                />
+          <div />
+
+          <div
+            v-for="d in days"
+            :key="d.toISOString()"
+          >
+            <DayHeader
+              :date="d"
+              :role="role"
+              @toggle="toggleDay(d)"
+            >
+              <div
+                v-if="!showFloating"
+                class="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-[1000]"
+                style="pointer-events:auto"
+              >
+                <transition name="modal-fade">
+                  <div
+                    v-if="role === 'admin' && dayDropdown === fmt(d)"
+                    ref="dayDropdownRef"
+                  >
+                    <DayCategoryDropdown
+                      :date-str="fmt(d)"
+                      :model-value="dayDropdown"
+                      @confirm="p => confirmDay(fmt(d), p)"
+                      @cancel="dayDropdown = null"
+                    />
+                  </div>
+                </transition>
               </div>
-            </transition>
-          </template>
-        </TimeGrid>
+            </DayHeader>
+          </div>
+        </div>
+
+        <div
+          ref="scrollerRef"
+          class="w-full overflow-x-auto"
+        >
+          <TimeGrid
+            v-if="!s.loading"
+            :days="days"
+            :times="s.allTimes"
+            :role="role"
+            :ghost-headers="showFloating"
+            @toggle-day="toggleDay"
+            @select-slot="openCreate"
+            @select-booking="openEdit"
+          />
+        </div>
       </div>
 
       <BookingTimeline
-        v-else-if="!s.loading"
+        v-if="!s.loading && (viewMode === 'timeline' || isMobile)"
         :days="days"
         :times="s.allTimes"
         :role="role"
@@ -309,7 +461,7 @@ watch(viewMode, () => {
 
     <teleport to="body">
       <div
-        v-show="viewMode === 'grid' && showFloating"
+        v-show="viewMode === 'grid' && showFloating && !isMobile"
         ref="floatingRef"
         class="fixed z-[400] bg-white pt-2 pb-1 shadow-sm border-b border-gray-200"
         :style="{ top: `0px`, left: `${floatLeft}px`, width: `${floatWidth}px` }"
@@ -333,6 +485,7 @@ watch(viewMode, () => {
                   <transition name="modal-fade">
                     <div
                       v-if="role === 'admin' && dayDropdown === fmt(d)"
+                      ref="dayDropdownRef"
                       class="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-[1000]"
                       style="pointer-events:auto"
                     >

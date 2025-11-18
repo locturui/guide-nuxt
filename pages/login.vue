@@ -9,39 +9,53 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center">
-    <form class="p-6 card bg-base-200 max-w-m" @submit.prevent="handleSubmit">
-      <h2 class="text-2xl font-bold mb-4 text-center">
-        Войти
-      </h2>
-      <div class="form-control mb-4">
-        <label class="label font-semibold">Логин</label>
-        <input
-          v-model="username"
-          type="text"
-          class="input input-bordered w-full"
-          required
+  <div class="min-h-screen flex items-center justify-center bg-surface-50">
+    <Card class="w-full max-w-md">
+      <template #title>
+        <h2 class="text-2xl font-bold text-center">
+          Войти
+        </h2>
+      </template>
+      <template #content>
+        <form
+          class="space-y-4"
+          @submit.prevent="handleSubmit"
         >
-      </div>
-      <div class="form-control mb-6">
-        <label class="label font-semibold">Пароль</label>
-        <input
-          v-model="password"
-          type="password"
-          class="input input-bordered w-full"
-          required
-        >
-      </div>
-      <button
-        type="submit"
-        class="btn btn-primary w-full"
-        :disabled="authStore.isAuthenticating"
-      >
-        {{ authStore.isAuthenticating ? 'Авторизация...' : 'Войти' }}
-      </button>
-      <p v-if="authStore.errorMessage" class="text-error mt-2">
-        {{ authStore.errorMessage }}
-      </p>
-    </form>
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-semibold text-surface-700">Логин</label>
+            <InputText
+              v-model="username"
+              type="text"
+              class="w-full"
+              required
+            />
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-semibold text-surface-700">Пароль</label>
+            <InputText
+              v-model="password"
+              type="password"
+              class="w-full"
+              required
+            />
+          </div>
+          <Button
+            type="submit"
+            label="Войти"
+            icon="pi pi-sign-in"
+            class="w-full"
+            :loading="authStore.isAuthenticating"
+            :disabled="authStore.isAuthenticating"
+          />
+          <Message
+            v-if="authStore.errorMessage"
+            severity="error"
+            class="mt-2"
+          >
+            {{ authStore.errorMessage }}
+          </Message>
+        </form>
+      </template>
+    </Card>
   </div>
 </template>

@@ -18,9 +18,24 @@ export default defineEventHandler(async (event) => {
 
   const db = useDB();
 
+  let [day] = await db.select().from(schema.days).where(
+    eq(schema.days.date, date),
+  ).limit(1);
+
+  if (!day) {
+    [day] = await db
+      .insert(schema.days)
+      .values({
+        date,
+        category: "Open",
+        limit: 51,
+      })
+      .returning();
+  }
+
   const [existingSlot] = await db.select().from(schema.timeslots).where(
     and(
-      eq(schema.timeslots.date, date),
+      eq(schema.timeslots.dayId, day.id),
       eq(schema.timeslots.time, time_str),
     ),
   ).limit(1);
@@ -30,20 +45,20 @@ export default defineEventHandler(async (event) => {
       .update(schema.timeslots)
       .set({
         limit,
-        updatedAt: new Date(),
       })
       .where(
         and(
-          eq(schema.timeslots.date, date),
+          eq(schema.timeslots.dayId, day.id),
           eq(schema.timeslots.time, time_str),
         ),
       );
   }
   else {
     await db.insert(schema.timeslots).values({
-      date,
+      dayId: day.id,
       time: time_str,
       limit,
+      limited: true,
     });
   }
 

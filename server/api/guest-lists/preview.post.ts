@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
 
   const [booking] = await db.select().from(schema.bookings).where(
     and(
-      eq(schema.bookings.id, Number(booking_id)),
+      eq(schema.bookings.id, booking_id),
       eq(schema.bookings.agencyId, auth.userId),
     ),
   ).limit(1);
@@ -43,7 +43,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const [existingList] = await db.select().from(schema.guestLists).where(
-    eq(schema.guestLists.bookingId, Number(booking_id)),
+    eq(schema.guestLists.bookingId, booking_id),
   ).limit(1);
 
   if (existingList) {

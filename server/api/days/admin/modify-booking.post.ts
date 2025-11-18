@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
   const db = useDB();
 
   const [booking] = await db.select().from(schema.bookings).where(
-    eq(schema.bookings.id, Number(booking_id)),
+    eq(schema.bookings.id, booking_id),
   ).limit(1);
 
   if (!booking) {
@@ -29,68 +29,82 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const [dayCategory] = await db.select().from(schema.dayCategories).where(
-    eq(schema.dayCategories.date, date),
+  let [day] = await db.select().from(schema.days).where(
+    eq(schema.days.date, date),
   ).limit(1);
 
-  const [existingSlot] = await db.select().from(schema.timeslots).where(
+  if (!day) {
+    [day] = await db
+      .insert(schema.days)
+      .values({
+        date,
+        category: "Open",
+        limit: 51,
+      })
+      .returning();
+  }
+
+  let [timeslot] = await db.select().from(schema.timeslots).where(
     and(
-      eq(schema.timeslots.date, date),
+      eq(schema.timeslots.dayId, day.id),
       eq(schema.timeslots.time, time),
     ),
   ).limit(1);
 
-  let timeslot = existingSlot;
-
   if (!timeslot) {
-    const [newSlot] = await db
+    [timeslot] = await db
       .insert(schema.timeslots)
       .values({
-        date,
+        dayId: day.id,
         time,
-        limit: dayCategory?.limit ?? 51,
+        limit: day.limit,
+        limited: false,
       })
       .returning();
-    timeslot = newSlot;
   }
 
   const existingBookings = await db.select().from(schema.bookings).where(
-    and(
-      eq(schema.bookings.date, date),
-      eq(schema.bookings.time, time),
-    ),
+    eq(schema.bookings.timeslotId, timeslot.id),
   );
 
   const booked = existingBookings
     .filter((b: any) => b.id !== booking.id && b.status !== "cancelled")
     .reduce((sum: number, b: any) => sum + b.peopleCount, 0);
 
-  if (booked + people_count > timeslot.limit) {
+  const slotLimit = timeslot.limit ?? day.limit;
+
+  if (booked + people_count > slotLimit) {
     throw createError({
       statusCode: 400,
-      message: `Not enough capacity. Available: ${timeslot.limit - booked}`,
+      message: `Not enough capacity. Available: ${slotLimit - booked}`,
     });
   }
+
+  const newPreciseTime = precise_time || time;
 
   await db
     .update(schema.bookings)
     .set({
-      date,
-      time,
+      timeslotId: timeslot.id,
       peopleCount: people_count,
-      preciseTime: precise_time || time,
+      preciseTime: newPreciseTime,
       updatedAt: new Date(),
     })
-    .where(eq(schema.bookings.id, Number(booking_id)));
+    .where(eq(schema.bookings.id, booking_id));
+
+  const [updatedBooking] = await db.select().from(schema.bookings).where(
+    eq(schema.bookings.id, booking_id),
+  ).limit(1);
 
   return {
     detail: "Бронирование изменено администратором",
-    id: booking_id,
+    id: String(updatedBooking.id),
     date,
     time,
-    people_count,
-    agency_id: booking.agencyId,
-    timeslot_id: `${date}|${time}`,
-    precise_time: precise_time || time,
+    people_count: updatedBooking.peopleCount,
+    agency_id: String(updatedBooking.agencyId),
+    timeslot_id: String(updatedBooking.timeslotId),
+    precise_time: updatedBooking.preciseTime,
+    status: updatedBooking.status,
   };
 });

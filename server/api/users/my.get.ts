@@ -6,16 +6,14 @@ import { requireAuth } from "~/server/utils/auth";
 export default defineEventHandler(async (event) => {
   const auth = await requireAuth(event);
 
-  if (auth.role !== "agency") {
-    throw createError({
-      statusCode: 403,
-      message: "Only agencies can access this endpoint",
-    });
-  }
-
   const db = useDB();
 
-  const [user] = await db.select().from(schema.users).where(
+  const [user] = await db.select({
+    id: schema.users.id,
+    email: schema.users.email,
+    role: schema.users.role,
+    agencyName: schema.users.agencyName,
+  }).from(schema.users).where(
     eq(schema.users.id, auth.userId),
   ).limit(1);
 
@@ -26,9 +24,23 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  return {
-    id: user.id,
-    email: user.email,
-    agency_name: user.name || user.email,
-  };
+  if (auth.role === "agency") {
+    return {
+      id: user.id,
+      email: user.email,
+      agency_name: user.agencyName || user.email,
+    };
+  }
+  else if (auth.role === "admin") {
+    return {
+      id: user.id,
+      email: user.email,
+    };
+  }
+  else {
+    throw createError({
+      statusCode: 403,
+      message: "Invalid user role",
+    });
+  }
 });

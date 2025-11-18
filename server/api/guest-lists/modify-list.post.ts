@@ -2,11 +2,7 @@ import { eq } from "drizzle-orm";
 
 import { schema, useDB } from "~/server/db";
 import { requireAuth } from "~/server/utils/auth";
-
-function toDbDate(ddmmyyyy: string): string {
-  const [day, month, year] = ddmmyyyy.trim().split(".");
-  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-}
+import { normalizePhoneNumber, parseDateOfBirthToAge } from "~/server/utils/guest-validation";
 
 export default defineEventHandler(async (event) => {
   const auth = await requireAuth(event);
@@ -54,13 +50,17 @@ export default defineEventHandler(async (event) => {
 
   for (const guest of guests) {
     if (guest.guest_id) {
+      const age = parseDateOfBirthToAge(guest.date_of_birth);
+      const normalizedPhone = normalizePhoneNumber(guest.phone);
+
       await db
         .update(schema.guests)
         .set({
-          name: guest.name,
-          dateOfBirth: toDbDate(guest.date_of_birth),
-          city: guest.city,
-          phone: guest.phone,
+          name: guest.name.trim(),
+          dateOfBirth: guest.date_of_birth.trim(),
+          age,
+          city: guest.city.trim(),
+          phone: normalizedPhone,
           updatedAt: new Date(),
         })
         .where(eq(schema.guests.id, guest.guest_id));

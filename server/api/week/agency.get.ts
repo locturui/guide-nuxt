@@ -1,4 +1,4 @@
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, lte } from "drizzle-orm";
 
 import { schema, useDB } from "~/server/db";
 import { requireAuth } from "~/server/utils/auth";
@@ -9,7 +9,7 @@ function generateAllTimes(): string[] {
   for (let h = 9; h < 20; h++) {
     for (const m of [0, 30]) {
       if (h === 19 && m === 30)
-        continue; // Stop at 19:30
+        continue;
       times.push(`${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`);
     }
   }
@@ -43,33 +43,37 @@ export default defineEventHandler(async (event) => {
 
   const db = useDB();
 
-  const [dayCategories, timeslots, agencyBookings, allBookings, users, guestLists, guideAssignments] = await Promise.all([
-    db.select().from(schema.dayCategories).where(
-      and(
-        gte(schema.dayCategories.date, startDateStr),
-        lte(schema.dayCategories.date, endDateStr),
-      ),
+  const days = await db.select().from(schema.days).where(
+    and(
+      gte(schema.days.date, startDateStr),
+      lte(schema.days.date, endDateStr),
     ),
-    db.select().from(schema.timeslots).where(
-      and(
-        gte(schema.timeslots.date, startDateStr),
-        lte(schema.timeslots.date, endDateStr),
-      ),
-    ),
-    db.select().from(schema.bookings).where(
-      and(
-        gte(schema.bookings.date, startDateStr),
-        lte(schema.bookings.date, endDateStr),
-        eq(schema.bookings.agencyId, auth.userId),
-      ),
-    ),
-    db.select().from(schema.bookings).where(
-      and(
-        gte(schema.bookings.date, startDateStr),
-        lte(schema.bookings.date, endDateStr),
-      ),
-    ),
-    db.select({ id: schema.users.id, name: schema.users.name }).from(schema.users),
+  );
+
+  const dayIds = days.map(d => d.id);
+  const dayMap = new Map(days.map(d => [d.id, d]));
+
+  const filteredTimeslots = dayIds.length > 0
+    ? dayIds.length === 1
+      ? await db.select().from(schema.timeslots).where(
+          eq(schema.timeslots.dayId, dayIds[0]),
+        )
+      : await db.select().from(schema.timeslots).where(
+          inArray(schema.timeslots.dayId, dayIds),
+        )
+    : [];
+
+  const timeslotIds = filteredTimeslots.map(ts => ts.id);
+  const allBookingsRaw = timeslotIds.length > 0
+    ? await db.select().from(schema.bookings).where(
+        inArray(schema.bookings.timeslotId, timeslotIds),
+      )
+    : [];
+  const allBookings = allBookingsRaw;
+  const agencyBookings = allBookingsRaw.filter(b => b.agencyId === auth.userId);
+
+  const [users, guestLists, guideAssignments] = await Promise.all([
+    db.select({ id: schema.users.id, agencyName: schema.users.agencyName }).from(schema.users),
     db.select().from(schema.guestLists),
     db.select().from(schema.guideAssignments),
   ]);
@@ -79,33 +83,50 @@ export default defineEventHandler(async (event) => {
     userMap.set(u.id, u);
   });
 
-  const dayCategoryMap = new Map();
-  dayCategories.forEach((dc: any) => {
-    dayCategoryMap.set(dc.date, dc);
-  });
+  const dayMapForDate = new Map(days.map(d => [d.date, d]));
 
   const timeslotMap = new Map();
-  timeslots.forEach((ts: any) => {
-    const key = `${ts.date}|${ts.time.substring(0, 5)}`;
-    timeslotMap.set(key, ts);
+  filteredTimeslots.forEach((ts: any) => {
+    const day = dayMap.get(ts.dayId);
+    if (day) {
+      const timeStr = typeof ts.time === "string" ? ts.time.substring(0, 5) : `${String(ts.time.hours || 0).padStart(2, "0")}:${String(ts.time.minutes || 0).padStart(2, "0")}`;
+      const key = `${day.date}|${timeStr}`;
+      timeslotMap.set(key, { ...ts, dayDate: day.date, timeStr });
+    }
   });
+
+  const timeslotByIdMap = new Map(filteredTimeslots.map(ts => [ts.id, ts]));
 
   const agencyBookingsBySlot = new Map();
   agencyBookings.forEach((booking: any) => {
-    const key = `${booking.date}|${booking.time.substring(0, 5)}`;
-    if (!agencyBookingsBySlot.has(key)) {
-      agencyBookingsBySlot.set(key, []);
+    const ts = timeslotByIdMap.get(booking.timeslotId);
+    if (ts) {
+      const day = dayMap.get(ts.dayId);
+      if (day) {
+        const timeStr = typeof ts.time === "string" ? ts.time.substring(0, 5) : `${String(ts.time.hours || 0).padStart(2, "0")}:${String(ts.time.minutes || 0).padStart(2, "0")}`;
+        const key = `${day.date}|${timeStr}`;
+        if (!agencyBookingsBySlot.has(key)) {
+          agencyBookingsBySlot.set(key, []);
+        }
+        agencyBookingsBySlot.get(key)!.push({ ...booking, date: day.date, time: timeStr });
+      }
     }
-    agencyBookingsBySlot.get(key)!.push(booking);
   });
 
   const allBookingsBySlot = new Map();
   allBookings.forEach((booking: any) => {
-    const key = `${booking.date}|${booking.time.substring(0, 5)}`;
-    if (!allBookingsBySlot.has(key)) {
-      allBookingsBySlot.set(key, []);
+    const ts = timeslotByIdMap.get(booking.timeslotId);
+    if (ts) {
+      const day = dayMap.get(ts.dayId);
+      if (day) {
+        const timeStr = typeof ts.time === "string" ? ts.time.substring(0, 5) : `${String(ts.time.hours || 0).padStart(2, "0")}:${String(ts.time.minutes || 0).padStart(2, "0")}`;
+        const key = `${day.date}|${timeStr}`;
+        if (!allBookingsBySlot.has(key)) {
+          allBookingsBySlot.set(key, []);
+        }
+        allBookingsBySlot.get(key)!.push({ ...booking, date: day.date, time: timeStr });
+      }
     }
-    allBookingsBySlot.get(key)!.push(booking);
   });
 
   const guestListByBookingId = new Map();
@@ -120,9 +141,9 @@ export default defineEventHandler(async (event) => {
 
   const allTimes = generateAllTimes();
   const result = weekDates.map((dateStr) => {
-    const dayCategory = dayCategoryMap.get(dateStr);
-    const dayLimit = dayCategory?.limit ?? 51;
-    const category = dayCategory?.category ?? "open";
+    const day = dayMapForDate.get(dateStr);
+    const dayLimit = day?.limit ?? 51;
+    const category = day?.category ?? "Open";
 
     const timeslots = allTimes.map((timeStr) => {
       const key = `${dateStr}|${timeStr}`;
@@ -152,12 +173,12 @@ export default defineEventHandler(async (event) => {
           const agency = userMap.get(b.agencyId);
 
           return {
-            id: b.id,
+            id: String(b.id),
             people_count: b.peopleCount,
-            agency_id: b.agencyId,
-            agency_name: agency?.name || "Unknown",
+            agency_id: String(b.agencyId),
+            agency_name: agency?.agencyName || "Unknown",
             status: bookingStatus,
-            precise_time: b.preciseTime,
+            precise_time: b.preciseTime || b.time,
           };
         }),
       };

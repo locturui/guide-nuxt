@@ -1,2 +1,104 @@
 @import "tailwindcss";
-@plugin "daisyui";
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
+  color-scheme: light !important;
+}
+
+* {
+  color-scheme: light !important;
+}
+
+.p-password input.p-inputtext,
+.p-password .p-inputtext {
+  padding-right: 2.5rem !important;
+}
+
+.p-password input[type="password"],
+.p-password input[type="text"] {
+  padding-right: 2.5rem !important;
+}
+
+.p-input-icon-left ~ input.p-inputtext,
+.p-input-icon-right ~ input.p-inputtext {
+  padding-left: 2.5rem;
+}
+
+.p-input-icon-right ~ input.p-inputtext {
+  padding-right: 2.5rem;
+  padding-left: 0.75rem;
+}
+
+.dp__input_wrap {
+  position: relative;
+}
+
+.dp__input_wrap:has(.dp--clear-btn) .dp__input,
+.dp__input_wrap:has(.dp--clear-btn) .p-inputtext {
+  padding-right: 2.5rem !important;
+}
+
+.dp__input_wrap:has(.dp__input_icon) .dp__input,
+.dp__input_wrap:has(.dp__input_icon) .p-inputtext {
+  padding-left: 2.5rem !important;
+}
+
+.dp__input_wrap .dp__input.dp__input_icon_pad,
+.dp__input_wrap .p-inputtext.dp__input_icon_pad {
+  padding-left: 2.5rem !important;
+}
+
+.dp__input_wrap .dp__input:not(.dp__input_icon_pad),
+.dp__input_wrap .p-inputtext:not(.dp__input_icon_pad) {
+  padding-right: 2.5rem !important;
+}
+
+.sticky-day-header::-webkit-scrollbar {
+  display: none;
+}
+
+.booking-badge-warning,
+span.p-tag[severity="warning"],
+span.p-tag[data-severity="warning"],
+span.p-tag.p-tag-warning,
+span.p-tag.p-severity-warning,
+.p-tag[severity="warning"],
+.p-tag[data-severity="warning"],
+.p-tag.p-tag-warning,
+.p-tag.p-severity-warning {
+  background-color: #fef3c7 !important;
+  color: #92400e !important;
+}
+
+.booking-badge-success,
+span.p-tag[severity="success"],
+span.p-tag[data-severity="success"],
+span.p-tag.p-tag-success,
+span.p-tag.p-severity-success,
+.p-tag[severity="success"],
+.p-tag[data-severity="success"],
+.p-tag.p-tag-success,
+.p-tag.p-severity-success {
+  background-color: #d1fae5 !important;
+  color: #065f46 !important;
+}
+
+.booking-badge-info,
+span.p-tag[severity="info"],
+span.p-tag[data-severity="info"],
+span.p-tag.p-tag-info,
+span.p-tag.p-severity-info,
+.p-tag[severity="info"],
+.p-tag[data-severity="info"],
+.p-tag.p-tag-info,
+.p-tag.p-severity-info {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+}

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { schema, useDB } from "~/server/db";
 import { requireAuth } from "~/server/utils/auth";
@@ -6,103 +6,161 @@ import { requireAuth } from "~/server/utils/auth";
 export default defineEventHandler(async (event) => {
   const auth = await requireAuth(event);
 
-  if (auth.role !== "agency") {
+  if (auth.role !== "agency" && auth.role !== "admin") {
     throw createError({
       statusCode: 403,
-      message: "Only agencies can reassign guides",
+      message: "Недостаточно прав для смены гида",
     });
   }
 
   const body = await readBody(event);
-  const { booking_id, new_guide_id } = body;
+  const { booking_id, old_guide_id, new_guide_id } = body;
 
-  if (!booking_id || !new_guide_id) {
+  if (!booking_id || !old_guide_id || !new_guide_id) {
     throw createError({
       statusCode: 400,
-      message: "Booking ID and new guide ID are required",
+      message: "Booking ID, old guide ID, and new guide ID are required",
     });
   }
 
   const db = useDB();
 
-  const [booking] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, Number(booking_id)),
-  ).limit(1);
+  let booking;
+  if (auth.role === "agency") {
+    [booking] = await db.select().from(schema.bookings).where(
+      and(
+        eq(schema.bookings.id, booking_id),
+        eq(schema.bookings.agencyId, auth.userId),
+      ),
+    ).limit(1);
+  }
+  else {
+    [booking] = await db.select().from(schema.bookings).where(
+      eq(schema.bookings.id, booking_id),
+    ).limit(1);
+  }
 
-  if (!booking || booking.agencyId !== auth.userId) {
+  if (!booking) {
     throw createError({
       statusCode: 404,
-      message: "Booking not found or doesn't belong to your agency",
+      message: "Бронирование не найдено или не принадлежит вашему агентству",
     });
   }
 
-  const [guide] = await db.select().from(schema.guides).where(eq(schema.guides.id, new_guide_id),
+  const [timeslot] = await db.select().from(schema.timeslots).where(
+    eq(schema.timeslots.id, booking.timeslotId),
   ).limit(1);
 
-  if (!guide || guide.agencyId !== auth.userId) {
+  if (timeslot) {
+    const [day] = await db.select().from(schema.days).where(
+      eq(schema.days.id, timeslot.dayId),
+    ).limit(1);
+
+    if (day) {
+      const startTime = booking.preciseTime || timeslot.time;
+      const startDateTime = new Date(`${day.date}T${startTime}`);
+      const now = new Date();
+
+      if (now >= startDateTime) {
+        throw createError({
+          statusCode: 400,
+          message: "Нельзя изменить гида после начала экскурсии",
+        });
+      }
+    }
+  }
+
+  let newGuide;
+  if (auth.role === "agency") {
+    [newGuide] = await db.select().from(schema.guides).where(
+      and(
+        eq(schema.guides.id, new_guide_id),
+        eq(schema.guides.agencyId, auth.userId),
+      ),
+    ).limit(1);
+  }
+  else {
+    [newGuide] = await db.select().from(schema.guides).where(
+      eq(schema.guides.id, new_guide_id),
+    ).limit(1);
+  }
+
+  if (!newGuide) {
     throw createError({
       statusCode: 404,
-      message: "Guide not found or doesn't belong to your agency",
+      message: "Новый гид не найден или не принадлежит вашему агентству",
     });
   }
 
-  const [guestList] = await db.select().from(schema.guestLists).where(eq(schema.guestLists.bookingId, Number(booking_id)),
+  const [guestList] = await db.select().from(schema.guestLists).where(
+    eq(schema.guestLists.bookingId, booking_id),
   ).limit(1);
 
   if (!guestList) {
     throw createError({
       statusCode: 400,
-      message: "Cannot reassign guide to booking without guest list",
+      message: "Нельзя переназначить гида на бронирование без списка гостей",
     });
   }
 
-  const [existing] = await db.select().from(schema.guideAssignments).where(eq(schema.guideAssignments.bookingId, Number(booking_id)),
+  const [existingAssignment] = await db.select().from(schema.guideAssignments).where(
+    and(
+      eq(schema.guideAssignments.bookingId, booking_id),
+      eq(schema.guideAssignments.guideId, old_guide_id),
+    ),
   ).limit(1);
 
-  if (existing) {
-    if (existing.guideId === new_guide_id) {
-      throw createError({
-        statusCode: 400,
-        message: "This guide is already assigned to this booking",
-      });
-    }
-
-    await db
-      .update(schema.guideAssignments)
-      .set({ guideId: new_guide_id })
-      .where(eq(schema.guideAssignments.id, existing.id));
-
-    return {
-      detail: "Гид успешно переназначен на бронирование",
-      assignment_id: existing.id,
-      booking_id,
-      guide_id: new_guide_id,
-      guide_name: guide.name,
-      guide_lastname: guide.lastname,
-      created_at: existing.createdAt.toISOString(),
-    };
+  if (!existingAssignment) {
+    throw createError({
+      statusCode: 404,
+      message: "Исходное назначение гида не найдено для данного бронирования",
+    });
   }
-  else {
-    const [assignment] = await db
-      .insert(schema.guideAssignments)
-      .values({
-        bookingId: Number(booking_id),
-        guideId: new_guide_id,
-      })
-      .returning();
 
-    await db
-      .update(schema.bookings)
-      .set({ status: "assigned" })
-      .where(eq(schema.bookings.id, Number(booking_id)));
-
-    return {
-      detail: "Гид успешно переназначен на бронирование",
-      assignment_id: assignment.id,
-      booking_id,
-      guide_id: new_guide_id,
-      guide_name: guide.name,
-      guide_lastname: guide.lastname,
-      created_at: assignment.createdAt.toISOString(),
-    };
+  if (existingAssignment.guideId === new_guide_id) {
+    throw createError({
+      statusCode: 400,
+      message: "Этот гид уже назначен на данное бронирование",
+    });
   }
+
+  const [duplicate] = await db.select().from(schema.guideAssignments).where(
+    and(
+      eq(schema.guideAssignments.bookingId, booking_id),
+      eq(schema.guideAssignments.guideId, new_guide_id),
+    ),
+  ).limit(1);
+
+  if (duplicate) {
+    throw createError({
+      statusCode: 400,
+      message: "Этот гид уже назначен на данное бронирование",
+    });
+  }
+
+  await db
+    .update(schema.guideAssignments)
+    .set({ guideId: new_guide_id })
+    .where(eq(schema.guideAssignments.id, existingAssignment.id));
+
+  const [updatedAssignment] = await db.select().from(schema.guideAssignments).where(
+    eq(schema.guideAssignments.id, existingAssignment.id),
+  ).limit(1);
+
+  const guideAssignments = await db.select().from(schema.guideAssignments).where(
+    eq(schema.guideAssignments.bookingId, booking_id),
+  );
+
+  const assignedCount = guideAssignments.length;
+  const required = Math.max(1, Math.ceil(booking.peopleCount / 17));
+
+  return {
+    detail: `Гид успешно переназначен на бронирование. Назначено гидов: ${assignedCount}/${required}.`,
+    assignment_id: String(updatedAssignment.id),
+    booking_id: String(updatedAssignment.bookingId),
+    guide_id: String(updatedAssignment.guideId),
+    guide_name: newGuide.name,
+    guide_lastname: newGuide.lastname,
+    created_at: updatedAssignment.createdAt.toISOString(),
+  };
 });

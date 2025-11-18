@@ -64,55 +64,73 @@ async function onDownloadSummary() {
 </script>
 
 <template>
-  <div
-    data-theme="light"
-    class="bg-white text-gray-900 p-3 rounded shadow space-y-2 min-w-[14rem] max-w-[90vw]"
+  <Card
+    class="min-w-[14rem] max-w-[90vw]"
     @click.stop
   >
-    <button
-      class="btn btn-sm btn-info w-full"
-      :disabled="downloadPending"
-      @click="onDownloadSummary"
-    >
-      <span v-if="downloadPending" class="loading loading-dots loading-sm" />
-      <span v-else>📄 Скачать сводку</span>
-    </button>
+    <template #content>
+      <div class="space-y-3">
+        <Button
+          label="📄 Скачать сводку"
+          icon="pi pi-download"
+          size="small"
+          class="w-full"
+          :loading="downloadPending"
+          :disabled="downloadPending"
+          @click="onDownloadSummary"
+        />
 
-    <div v-if="downloadError" class="text-red-600 text-xs">
-      ⚠ {{ downloadError }}
-    </div>
+        <Message
+          v-if="downloadError"
+          severity="error"
+          class="text-xs"
+        >
+          {{ downloadError }}
+        </Message>
 
-    <div class="divider my-2" />
+        <Divider />
 
-    <select v-model="category" class="select select-bordered w-full">
-      <option value="Open">
-        Открыто
-      </option>
-      <option value="Closed">
-        Закрыто
-      </option>
-      <option value="Limited">
-        Лимит
-      </option>
-    </select>
+        <div class="flex flex-col gap-2">
+          <label class="text-sm font-medium text-surface-700">Категория дня</label>
+          <Select
+            v-model="category"
+            :options="[
+              { label: 'Открыто', value: 'Open' },
+              { label: 'Закрыто', value: 'Closed' },
+              { label: 'Лимит', value: 'Limited' },
+            ]"
+            option-label="label"
+            option-value="value"
+            class="w-full"
+          />
+        </div>
 
-    <div v-if="category === 'Limited'">
-      <label class="block text-sm font-medium">Лимит</label>
-      <input
-        v-model.number="limit"
-        type="number"
-        min="0"
-        class="input input-bordered w-full"
-      >
-    </div>
+        <div v-if="category === 'Limited'" class="flex flex-col gap-2">
+          <label class="text-sm font-medium text-surface-700">Лимит</label>
+          <InputNumber
+            v-model="limit"
+            :min="0"
+            class="w-full"
+          />
+        </div>
 
-    <div class="flex justify-end gap-2 pt-1">
-      <button class="btn btn-xs sm:btn-sm btn-primary" @click="onConfirm">
-        Сохранить
-      </button>
-      <button class="btn btn-xs sm:btn-sm" @click="$emit('cancel')">
-        Отмена
-      </button>
-    </div>
-  </div>
+        <div class="flex justify-end gap-2 pt-1">
+          <Button
+            label="Сохранить"
+            icon="pi pi-check"
+            size="small"
+            @click="onConfirm"
+          />
+          <Button
+            label="Отмена"
+            icon="pi pi-times"
+            outlined
+            severity="secondary"
+            size="small"
+            @click="$emit('cancel')"
+          />
+        </div>
+      </div>
+    </template>
+  </Card>
 </template>

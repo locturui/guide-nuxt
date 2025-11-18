@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
 
   const db = useDB();
 
-  const [booking] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, Number(booking_id)),
+  const [booking] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, booking_id),
   ).limit(1);
 
   if (!booking || booking.agencyId !== auth.userId) {
@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const [guestList] = await db.select().from(schema.guestLists).where(eq(schema.guestLists.bookingId, Number(booking_id)),
+  const [guestList] = await db.select().from(schema.guestLists).where(eq(schema.guestLists.bookingId, booking_id),
   ).limit(1);
 
   if (!guestList) {
@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const [existingAssignment] = await db.select().from(schema.guideAssignments).where(eq(schema.guideAssignments.bookingId, Number(booking_id)),
+  const [existingAssignment] = await db.select().from(schema.guideAssignments).where(eq(schema.guideAssignments.bookingId, booking_id),
   ).limit(1);
 
   if (existingAssignment) {
@@ -68,7 +68,7 @@ export default defineEventHandler(async (event) => {
   const [assignment] = await db
     .insert(schema.guideAssignments)
     .values({
-      bookingId: Number(booking_id),
+      bookingId: booking_id,
       guideId: guide_id,
     })
     .returning();
@@ -76,7 +76,7 @@ export default defineEventHandler(async (event) => {
   await db
     .update(schema.bookings)
     .set({ status: "assigned" })
-    .where(eq(schema.bookings.id, Number(booking_id)));
+    .where(eq(schema.bookings.id, booking_id));
 
   return {
     detail: "Гид успешно назначен на бронирование",

@@ -14,12 +14,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event);
-  const { guide_id, name, lastname, badge_number } = body;
+  const { guide_id, name, lastname } = body;
 
-  if (!guide_id || !name || !lastname) {
+  if (!guide_id || !lastname) {
     throw createError({
       statusCode: 400,
-      message: "Guide ID, name, and lastname are required",
+      message: "Guide ID and lastname are required",
     });
   }
 
@@ -42,17 +42,26 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const updateData: any = {
+    lastname,
+  };
+
+  if (name !== undefined && name !== null) {
+    updateData.name = name;
+  }
+
   await db
     .update(schema.guides)
-    .set({
-      name,
-      lastname,
-      badgeNumber: badge_number || null,
-      updatedAt: new Date(),
-    })
+    .set(updateData)
     .where(eq(schema.guides.id, guide_id));
 
+  const [updatedGuide] = await db.select().from(schema.guides).where(eq(schema.guides.id, guide_id),
+  ).limit(1);
+
   return {
-    ok: true,
+    id: updatedGuide.id,
+    name: updatedGuide.name,
+    lastname: updatedGuide.lastname,
+    agency_id: updatedGuide.agencyId,
   };
 });

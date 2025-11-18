@@ -24,7 +24,6 @@ export default defineEventHandler(async (event) => {
       name: g.name,
       lastname: g.lastname,
       agency_id: g.agencyId,
-      badge_number: g.badgeNumber,
     })),
   };
 });

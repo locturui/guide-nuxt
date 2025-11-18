@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
   const db = useDB();
 
   const [booking] = await db.select().from(schema.bookings).where(
-    eq(schema.bookings.id, Number(booking_id)),
+    eq(schema.bookings.id, booking_id),
   ).limit(1);
 
   if (!booking) {
@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  await db.delete(schema.bookings).where(eq(schema.bookings.id, Number(booking_id)));
+  await db.delete(schema.bookings).where(eq(schema.bookings.id, booking_id));
 
   return {
     detail: "Booking cancelled by admin",

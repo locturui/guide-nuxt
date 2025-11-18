@@ -35,33 +35,38 @@ export default defineEventHandler(async (event) => {
     dayLimit = inputLimit ?? 51;
   }
 
-  const [existingDay] = await db.select().from(schema.dayCategories).where(
-    eq(schema.dayCategories.date, date),
+  const [existingDay] = await db.select().from(schema.days).where(
+    eq(schema.days.date, date),
   ).limit(1);
 
   if (existingDay) {
     await db
-      .update(schema.dayCategories)
+      .update(schema.days)
       .set({
         category,
         limit: dayLimit,
-        updatedAt: new Date(),
       })
-      .where(eq(schema.dayCategories.date, date));
+      .where(eq(schema.days.date, date));
   }
   else {
-    await db.insert(schema.dayCategories).values({
+    await db.insert(schema.days).values({
       date,
       category,
       limit: dayLimit,
     });
   }
 
-  await db.execute(sql`
-    UPDATE timeslots
-    SET "limit" = ${dayLimit}
-    WHERE date = ${date}
-  `);
+  const [day] = await db.select().from(schema.days).where(
+    eq(schema.days.date, date),
+  ).limit(1);
+
+  if (day) {
+    await db.execute(sql`
+      UPDATE timeslots
+      SET "limit" = ${dayLimit}
+      WHERE day_id = ${day.id}
+    `);
+  }
 
   return {
     detail: "Day updated",

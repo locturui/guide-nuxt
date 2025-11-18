@@ -9,7 +9,6 @@ export type Guide = {
   name: string;
   lastname: string;
   agency_id: string;
-  badge_number: string;
 };
 
 export const useGuidesStore = defineStore("guides", () => {
@@ -46,23 +45,23 @@ export const useGuidesStore = defineStore("guides", () => {
     }
   }
 
-  async function createGuide(name: string, lastname: string, badge_number: string) {
+  async function createGuide(name: string, lastname: string) {
     const res = await useApi("/guides", {
       method: "POST",
-      body: { name, lastname, badge_number },
+      body: { name, lastname },
     }) as { id?: string };
     await fetchGuides();
     return res;
   }
 
-  async function updateGuide(guide_id: string, name: string, lastname: string, badge_number: string) {
+  async function updateGuide(guide_id: string, name: string, lastname: string) {
     const res = await useApi("/guides/update", {
       method: "POST",
-      body: { guide_id, name, lastname, badge_number },
+      body: { guide_id, name, lastname },
     }) as { ok?: boolean };
     const idx = items.value.findIndex(g => g.id === guide_id);
     if (idx !== -1) {
-      items.value[idx] = { ...items.value[idx], name, lastname, badge_number };
+      items.value[idx] = { ...items.value[idx], name, lastname };
     }
     return res;
   }
@@ -84,10 +83,10 @@ export const useGuidesStore = defineStore("guides", () => {
     return res;
   }
 
-  async function reassignGuide(booking_id: string, new_guide_id: string) {
+  async function reassignGuide(booking_id: string, old_guide_id: string, new_guide_id: string) {
     const res = await useApi("/guides/reassign", {
       method: "POST",
-      body: { booking_id, new_guide_id },
+      body: { booking_id, old_guide_id, new_guide_id },
     }) as { detail: string; assignment_id: string; booking_id: string; guide_id: string; guide_name: string; created_at: string };
     return res;
   }

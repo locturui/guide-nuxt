@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const _ = defineProps<{
+defineProps<{
   days: Date[];
   times: string[];
   role: "admin" | "agency";
@@ -15,31 +15,9 @@ const emit = defineEmits<{
 
 <template>
   <div
-    class="grid w-full gap-0"
+    class="grid w-full gap-2"
     style="grid-template-columns:32px repeat(7, minmax(120px, 1fr));"
   >
-    <div :class="ghostHeaders ? 'invisible pointer-events-none' : ''" />
-
-    <div
-      v-for="d in days"
-      :key="d.toISOString()"
-      :class="ghostHeaders ? 'invisible pointer-events-none' : ''"
-    >
-      <DayHeader
-        :date="d"
-        :role="role"
-        @toggle="emit('toggleDay', d)"
-      >
-        <div
-          v-if="!ghostHeaders"
-          class="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-[1000]"
-          style="pointer-events:auto"
-        >
-          <slot name="day-dropdown" :date="d" />
-        </div>
-      </DayHeader>
-    </div>
-
     <template v-for="time in times" :key="time">
       <div class="text-right pr-2 text-[10px] sm:text-xs text-gray-500 select-none">
         {{ time }}

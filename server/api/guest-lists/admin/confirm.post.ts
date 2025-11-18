@@ -2,16 +2,7 @@ import { eq } from "drizzle-orm";
 
 import { schema, useDB } from "~/server/db";
 import { requireAdmin } from "~/server/utils/auth";
-
-function toDbDate(ddmmyyyy: string): string {
-  const [day, month, year] = ddmmyyyy.trim().split(".");
-  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-}
-
-function toFrontendDate(yyyymmdd: string): string {
-  const [year, month, day] = yyyymmdd.split("-");
-  return `${day.padStart(2, "0")}.${month.padStart(2, "0")}.${year}`;
-}
+import { normalizePhoneNumber, parseDateOfBirthToAge } from "~/server/utils/guest-validation";
 
 export default defineEventHandler(async (event) => {
   await requireAdmin(event);
@@ -28,7 +19,7 @@ export default defineEventHandler(async (event) => {
 
   const db = useDB();
 
-  const [booking] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, Number(booking_id)),
+  const [booking] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, booking_id),
   ).limit(1);
 
   if (!booking) {
@@ -39,7 +30,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const [existingList] = await db.select().from(schema.guestLists).where(
-    eq(schema.guestLists.bookingId, Number(booking_id)),
+    eq(schema.guestLists.bookingId, booking_id),
   ).limit(1);
 
   let guestList = existingList;
@@ -51,37 +42,35 @@ export default defineEventHandler(async (event) => {
     [guestList] = await db
       .insert(schema.guestLists)
       .values({
-        bookingId: Number(booking_id),
+        bookingId: booking_id,
         source: "manual",
       })
       .returning();
   }
 
-  const createdGuests = [];
-  for (const guest of guests) {
-    const [created] = await db
-      .insert(schema.guests)
-      .values({
-        guestListId: guestList.id,
-        name: guest.name,
-        dateOfBirth: toDbDate(guest.date_of_birth),
-        city: guest.city,
-        phone: guest.phone,
-      })
-      .returning();
-    createdGuests.push(created);
-  }
+  const guestsToInsert = guests.map(guest => ({
+    guestListId: guestList.id,
+    name: guest.name.trim(),
+    dateOfBirth: guest.date_of_birth.trim(),
+    age: parseDateOfBirthToAge(guest.date_of_birth),
+    city: guest.city.trim(),
+    phone: normalizePhoneNumber(guest.phone),
+  }));
+
+  const createdGuests = guestsToInsert.length > 0
+    ? await db.insert(schema.guests).values(guestsToInsert).returning()
+    : [];
 
   await db
     .update(schema.bookings)
     .set({ status: "filled" })
-    .where(eq(schema.bookings.id, Number(booking_id)));
+    .where(eq(schema.bookings.id, booking_id));
 
   return {
     booking_id,
     guests: createdGuests.map(g => ({
       name: g.name,
-      date_of_birth: toFrontendDate(g.dateOfBirth),
+      date_of_birth: g.dateOfBirth,
       city: g.city,
       phone: g.phone,
       errors: [],
@@ -96,8 +85,8 @@ export default defineEventHandler(async (event) => {
       guests: createdGuests.map(g => ({
         id: g.id,
         name: g.name,
-        date_of_birth: toFrontendDate(g.dateOfBirth),
-        age: calculateAge(g.dateOfBirth),
+        date_of_birth: g.dateOfBirth,
+        age: g.age,
         city: g.city,
         phone: g.phone,
         created_at: g.createdAt.toISOString(),
@@ -106,16 +95,3 @@ export default defineEventHandler(async (event) => {
     },
   };
 });
-
-function calculateAge(dateOfBirth: string): number {
-  const today = new Date();
-  const birthDate = new Date(dateOfBirth);
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-    age--;
-  }
-
-  return age;
-}

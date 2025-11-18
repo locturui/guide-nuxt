@@ -152,7 +152,7 @@ function normalizePhone(phone: string): string {
     return `+7${digits}`;
   }
 
-  return phone; // Return original if can't normalize
+  return phone;
 }
 
 export function validateGuestCount(guestCount: number, bookingPeopleCount: number): string[] {

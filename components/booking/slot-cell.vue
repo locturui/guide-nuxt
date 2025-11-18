@@ -7,7 +7,7 @@ const props = defineProps({
   time: { type: String, required: true },
   role: { type: String, required: true },
 });
-defineEmits(["selectSlot", "selectBooking"]);
+const emit = defineEmits(["selectSlot", "selectBooking"]);
 
 const s = useScheduleStore();
 
@@ -32,32 +32,27 @@ const bookings = computed(() =>
 );
 
 const selected = computed(() => !!s.selectedSlots[`${dateStr.value}|${props.time}`]);
-function toggle() {
-  s.toggleSelect(dateStr.value, props.time);
+
+function handleSlotClick() {
+  if (props.role === "admin" && s.selectMode) {
+    s.toggleSelect(dateStr.value, props.time);
+  }
+  else {
+    emit("selectSlot", { date: dateStr.value, time: props.time });
+  }
 }
 </script>
 
 <template>
-  <label
-    v-if="role === 'admin'"
-    class="absolute top-1 right-1 z-50"
-    style="pointer-events:auto"
-  >
-    <input
-      type="checkbox"
-      class="checkbox checkbox-primary checkbox-sm"
-      :checked="selected"
-      @change="toggle"
-    >
-  </label>
-
   <BookingSlot
     :start="start"
     :end="end"
     :left="left"
     :limit="limit"
     :bookings="bookings"
-    @select-slot="() => $emit('selectSlot', { date: dateStr, time })"
-    @select-booking="(b) => $emit('selectBooking', b)"
+    :selected="selected"
+    :select-mode="role === 'admin' && s.selectMode"
+    @select-slot="handleSlotClick"
+    @select-booking="(b) => emit('selectBooking', b)"
   />
 </template>

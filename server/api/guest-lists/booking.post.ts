@@ -3,11 +3,6 @@ import { eq } from "drizzle-orm";
 import { schema, useDB } from "~/server/db";
 import { requireAuth } from "~/server/utils/auth";
 
-function toFrontendDate(yyyymmdd: string): string {
-  const [year, month, day] = yyyymmdd.split("-");
-  return `${day.padStart(2, "0")}.${month.padStart(2, "0")}.${year}`;
-}
-
 export default defineEventHandler(async (event) => {
   const auth = await requireAuth(event);
 
@@ -24,7 +19,7 @@ export default defineEventHandler(async (event) => {
   const db = useDB();
 
   const [booking] = await db.select().from(schema.bookings).where(
-    eq(schema.bookings.id, Number(booking_id)),
+    eq(schema.bookings.id, booking_id),
   ).limit(1);
 
   if (!booking) {
@@ -42,7 +37,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const [guestList] = await db.select().from(schema.guestLists).where(
-    eq(schema.guestLists.bookingId, Number(booking_id)),
+    eq(schema.guestLists.bookingId, booking_id),
   ).limit(1);
 
   if (!guestList) {
@@ -56,9 +51,11 @@ export default defineEventHandler(async (event) => {
     eq(schema.guests.guestListId, guestList.id),
   );
 
-  const [guideAssignment] = await db.select().from(schema.guideAssignments).where(
-    eq(schema.guideAssignments.bookingId, Number(booking_id)),
-  ).limit(1);
+  const guideAssignments = await db.select().from(schema.guideAssignments).where(
+    eq(schema.guideAssignments.bookingId, booking_id),
+  );
+
+  const guideIds = guideAssignments.map(ga => String(ga.guideId));
 
   return {
     guest_list: {
@@ -67,12 +64,12 @@ export default defineEventHandler(async (event) => {
       source: guestList.source,
       created_at: guestList.createdAt.toISOString(),
       updated_at: guestList.updatedAt.toISOString(),
-      guide_id: guideAssignment?.guideId || null,
+      guide_ids: guideIds,
       guests: guests.map(g => ({
         id: g.id,
         name: g.name,
-        date_of_birth: toFrontendDate(g.dateOfBirth),
-        age: calculateAge(g.dateOfBirth),
+        date_of_birth: g.dateOfBirth,
+        age: g.age,
         city: g.city,
         phone: g.phone,
         created_at: g.createdAt.toISOString(),
@@ -81,16 +78,3 @@ export default defineEventHandler(async (event) => {
     },
   };
 });
-
-function calculateAge(dateOfBirth: string): number {
-  const today = new Date();
-  const birthDate = new Date(dateOfBirth);
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-    age--;
-  }
-
-  return age;
-}

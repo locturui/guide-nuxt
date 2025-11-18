@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event);
-  const { date, time, people_count, precise_time } = body;
+  const { date, time, people_count, precise_time, is_joint } = body;
 
   if (!date || !time || !people_count) {
     throw createError({
@@ -33,68 +33,80 @@ export default defineEventHandler(async (event) => {
 
   const db = useDB();
 
-  const [dayCategory] = await db.select().from(schema.dayCategories).where(
-    eq(schema.dayCategories.date, date),
+  let [day] = await db.select().from(schema.days).where(
+    eq(schema.days.date, date),
   ).limit(1);
 
-  const [timeslot] = await db.select().from(schema.timeslots).where(
+  if (!day) {
+    [day] = await db
+      .insert(schema.days)
+      .values({
+        date,
+        category: "Open",
+        limit: 51,
+      })
+      .returning();
+  }
+
+  let [timeslot] = await db.select().from(schema.timeslots).where(
     and(
-      eq(schema.timeslots.date, date),
+      eq(schema.timeslots.dayId, day.id),
       eq(schema.timeslots.time, time),
     ),
   ).limit(1);
 
-  let slot = timeslot;
-
-  if (!slot) {
-    const [newSlot] = await db
+  if (!timeslot) {
+    const defaultLimit = (time.startsWith("08:") || time.startsWith("08:")) ? 0 : day.limit;
+    [timeslot] = await db
       .insert(schema.timeslots)
       .values({
-        date,
+        dayId: day.id,
         time,
-        limit: dayCategory?.limit ?? 51,
+        limit: defaultLimit,
+        limited: false,
       })
       .returning();
-    slot = newSlot;
   }
 
   const existingBookings = await db.select().from(schema.bookings).where(
-    and(
-      eq(schema.bookings.date, date),
-      eq(schema.bookings.time, time),
-    ),
+    eq(schema.bookings.timeslotId, timeslot.id),
   );
 
-  const booked = existingBookings
-    .filter((b: any) => b.status !== "cancelled")
-    .reduce((sum: number, b: any) => sum + b.peopleCount, 0);
+  const booked = existingBookings.reduce((sum: number, b: any) => sum + b.peopleCount, 0);
+  const slotLimit = timeslot.limit ?? day.limit;
 
-  if (booked + people_count > slot.limit) {
+  if (booked + people_count > slotLimit) {
     throw createError({
       statusCode: 400,
-      message: `Not enough capacity. Available: ${slot.limit - booked}`,
+      message: `Not enough capacity. Available: ${slotLimit - booked}`,
     });
   }
+
+  const preciseTimeValue = precise_time || time;
+  const bookingType = is_joint ? "joint" : "regular";
 
   const [booking] = await db
     .insert(schema.bookings)
     .values({
       agencyId: auth.userId,
-      date,
-      time,
+      timeslotId: timeslot.id,
       peopleCount: people_count,
-      preciseTime: precise_time || time,
-      status: "pending",
+      preciseTime: preciseTimeValue,
+      bookingType: bookingType as "regular" | "joint" | "immediate",
     })
     .returning();
 
+  const status = "booked";
+
   return {
     id: String(booking.id),
-    date: booking.date,
-    time: booking.time,
+    date,
+    time,
     people_count: booking.peopleCount,
     agency_id: booking.agencyId,
-    timeslot_id: `${booking.date}|${booking.time}`,
+    timeslot_id: String(booking.timeslotId),
     precise_time: booking.preciseTime,
+    booking_type: booking.bookingType,
+    status,
   };
 });

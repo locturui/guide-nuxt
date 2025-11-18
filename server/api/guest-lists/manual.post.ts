@@ -2,36 +2,8 @@ import { eq } from "drizzle-orm";
 
 import { schema, useDB } from "~/server/db";
 import { requireAuth } from "~/server/utils/auth";
+import { normalizePhoneNumber, parseDateOfBirthToAge, validateAgesComplete, validateDateFormat, validateGuestAge } from "~/server/utils/guest-validation";
 import { previewManager } from "~/server/utils/preview-manager";
-
-function calculateAge(dateOfBirth: string): number {
-  const [day, month, year] = dateOfBirth.split(".").map(Number);
-  const birthDate = new Date(year, month - 1, day);
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-    age--;
-  }
-
-  return age;
-}
-
-function validateDateFormat(date: string): boolean {
-  const regex = /^\d{2}\.\d{2}\.\d{4}$/;
-  return regex.test(date);
-}
-
-function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-
-  if (digits.length !== 11 || !digits.startsWith("7")) {
-    throw new Error(`Неверный формат телефона: ${phone}. Ожидается 11 цифр, начиная с 7`);
-  }
-
-  return digits;
-}
 
 export default defineEventHandler(async (event) => {
   const auth = await requireAuth(event);
@@ -56,7 +28,7 @@ export default defineEventHandler(async (event) => {
   const db = useDB();
 
   const [booking] = await db.select().from(schema.bookings).where(
-    eq(schema.bookings.id, Number(booking_id)),
+    eq(schema.bookings.id, booking_id),
   ).limit(1);
 
   if (!booking || booking.agencyId !== auth.userId) {
@@ -67,7 +39,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const [existing] = await db.select().from(schema.guestLists).where(
-    eq(schema.guestLists.bookingId, Number(booking_id)),
+    eq(schema.guestLists.bookingId, booking_id),
   ).limit(1);
 
   if (existing) {
@@ -104,24 +76,24 @@ export default defineEventHandler(async (event) => {
     }
     else if (dateOfBirth) {
       try {
-        age = calculateAge(dateOfBirth);
+        age = parseDateOfBirthToAge(dateOfBirth);
         ages.push(age);
-        if (age < 12) {
+        if (!validateGuestAge(age)) {
           errors.push(`Гость должен быть не младше 12 лет. Текущий возраст: ${age}`);
         }
       }
-      catch {
-        errors.push("Ошибка при расчете возраста");
+      catch (error: any) {
+        errors.push(String(error));
       }
     }
 
     let normalizedPhone = phone;
     if (phone) {
       try {
-        normalizedPhone = normalizePhone(phone);
+        normalizedPhone = normalizePhoneNumber(phone);
       }
       catch (error: any) {
-        errors.push(error.message);
+        errors.push(String(error));
       }
     }
 
@@ -146,11 +118,9 @@ export default defineEventHandler(async (event) => {
     );
   }
 
-  if (ages.length > 0) {
-    const adults = ages.filter(a => a >= 18).length;
-    const minors = ages.filter(a => a < 18).length;
-
-    if (adults < minors) {
+  const [validationResult, adults, minors] = validateAgesComplete(ages);
+  if (!validationResult) {
+    if (adults !== -1 && minors !== -1) {
       generalErrors.push(
         `Количество взрослых должно быть не менее количества детей (${adults} < ${minors})`,
       );

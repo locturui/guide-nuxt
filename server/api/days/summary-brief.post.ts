@@ -56,6 +56,7 @@ export default defineEventHandler(async (event) => {
     const timeslot = timeslots.find(ts => ts.id === booking.timeslotId);
     if (!timeslot)
       continue;
+
     const guideAssignments = await db.select().from(schema.guideAssignments).where(
       eq(schema.guideAssignments.bookingId, booking.id),
     );
@@ -80,24 +81,6 @@ export default defineEventHandler(async (event) => {
     if (guides.length === 0)
       continue;
 
-    const [guestList] = await db.select().from(schema.guestLists).where(
-      eq(schema.guestLists.bookingId, booking.id),
-    ).limit(1);
-
-    if (!guestList)
-      continue;
-
-    const guestsData = await db.select().from(schema.guests).where(
-      eq(schema.guests.guestListId, guestList.id),
-    );
-
-    if (guestsData.length === 0)
-      continue;
-
-    const guestListData = guestsData.map(g => ({
-      name: g.name,
-    }));
-
     const timeValue = booking.preciseTime || timeslot.time;
     let formattedTime = timeValue;
 
@@ -112,7 +95,7 @@ export default defineEventHandler(async (event) => {
     summaryBookings.push({
       precise_time: formattedTime || "00:00",
       guides,
-      guest_list: guestListData,
+      people_count: String(booking.peopleCount || "0"),
     });
   }
 
@@ -122,8 +105,8 @@ export default defineEventHandler(async (event) => {
     return timeA.localeCompare(timeB);
   });
 
-  const [year, month, dayStr] = date.split("-");
-  const formattedDate = `${dayStr}.${month}.${year}`;
+  const [year, month, dayNum] = date.split("-");
+  const formattedDate = `${dayNum}.${month}.${year}`;
 
   const summaryData = {
     general: {
@@ -132,7 +115,7 @@ export default defineEventHandler(async (event) => {
     },
   };
 
-  const templatePath = join(process.cwd(), "server", "static", "security_template.docx");
+  const templatePath = join(process.cwd(), "server", "static", "security_template_1.docx");
 
   try {
     const content = await readFile(templatePath);
@@ -155,7 +138,7 @@ export default defineEventHandler(async (event) => {
 
     setResponseHeaders(event, {
       "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "Content-Disposition": `attachment; filename="security_summary_${date}.docx"`,
+      "Content-Disposition": `attachment; filename="security_summary_brief_${date}.docx"`,
     });
 
     return buf;
@@ -164,19 +147,18 @@ export default defineEventHandler(async (event) => {
     console.error("Error generating DOCX:", error);
 
     const separator = "=".repeat(80);
-    let reportText = `Сводка для охраны\nДата: ${formattedDate}\n\n`;
-    reportText += "Время | Гид | Список гостей\n";
+    let reportText = `Сводка для охраны (краткая)\nДата: ${formattedDate}\n\n`;
+    reportText += "Время | Гид | Количество гостей\n";
     reportText += `${separator}\n`;
 
     for (const booking of summaryBookings) {
       const guideNames = booking.guides.map((g: any) => `${g.lastname} ${g.name}${g.badge}`).join(", ");
-      const guestNames = booking.guest_list.map((g: any) => g.name).join(", ");
-      reportText += `${booking.precise_time} | ${guideNames} | ${guestNames}\n`;
+      reportText += `${booking.precise_time} | ${guideNames} | ${booking.people_count}\n`;
     }
 
     setResponseHeaders(event, {
       "Content-Type": "text/plain; charset=utf-8",
-      "Content-Disposition": `attachment; filename="security_summary_${date}.txt"`,
+      "Content-Disposition": `attachment; filename="security_summary_brief_${date}.txt"`,
     });
 
     return reportText;

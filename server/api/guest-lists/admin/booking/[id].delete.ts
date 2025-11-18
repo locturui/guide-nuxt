@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   const db = useDB();
 
   const [guestList] = await db.select().from(schema.guestLists).where(
-    eq(schema.guestLists.bookingId, Number(id)),
+    eq(schema.guestLists.bookingId, id),
   ).limit(1);
 
   if (!guestList) {
@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
   await db
     .update(schema.bookings)
     .set({ status: "pending" })
-    .where(eq(schema.bookings.id, Number(id)));
+    .where(eq(schema.bookings.id, id));
 
   return {
     detail: "Guest list deleted successfully",

@@ -18,9 +18,24 @@ export default defineEventHandler(async (event) => {
 
   const db = useDB();
 
+  let [day] = await db.select().from(schema.days).where(
+    eq(schema.days.date, date),
+  ).limit(1);
+
+  if (!day) {
+    [day] = await db
+      .insert(schema.days)
+      .values({
+        date,
+        category: "Open",
+        limit: 51,
+      })
+      .returning();
+  }
+
   const [timeslot] = await db.select().from(schema.timeslots).where(
     and(
-      eq(schema.timeslots.date, date),
+      eq(schema.timeslots.dayId, day.id),
       eq(schema.timeslots.time, time),
     ),
   ).limit(1);
@@ -28,48 +43,61 @@ export default defineEventHandler(async (event) => {
   let slotData = timeslot;
 
   if (!slotData) {
-    const [newSlot] = await db
+    [slotData] = await db
       .insert(schema.timeslots)
       .values({
-        date,
+        dayId: day.id,
         time,
-        limit: 51,
+        limit: day.limit,
+        limited: false,
       })
       .returning();
-    slotData = newSlot;
   }
 
   const bookings = await db.select().from(schema.bookings).where(
-    and(
-      eq(schema.bookings.date, date),
-      eq(schema.bookings.time, time),
-    ),
+    eq(schema.bookings.timeslotId, slotData.id),
   );
 
-  const bookingsWithAgency = await Promise.all(
-    bookings.map(async (booking) => {
-      const [agency] = await db.select().from(schema.users).where(
-        eq(schema.users.id, booking.agencyId),
-      ).limit(1);
-      return { ...booking, agency };
-    }),
-  );
+  const agencyIds = [...new Set(bookings.map(b => b.agencyId))];
+
+  const allAgencies = agencyIds.length > 0
+    ? await Promise.all(agencyIds.map(id =>
+        db.select({ id: schema.users.id, agencyName: schema.users.agencyName }).from(schema.users).where(
+          eq(schema.users.id, id),
+        ).limit(1),
+      ))
+    : [];
+
+  const agencyMap = new Map();
+  allAgencies.forEach((arr) => {
+    const agency = arr[0];
+    if (agency) {
+      agencyMap.set(agency.id, agency);
+    }
+  });
+
+  const bookingsWithAgency = bookings.map(booking => ({
+    ...booking,
+    agency: agencyMap.get(booking.agencyId),
+  }));
 
   const booked = bookingsWithAgency
     .filter((b: any) => b.status !== "cancelled")
     .reduce((sum: number, b: any) => sum + b.peopleCount, 0);
 
+  const slotLimit = slotData.limit ?? day.limit;
+
   return {
     date,
     time,
-    limit: slotData.limit,
-    remaining: Math.max(0, slotData.limit - booked),
+    limit: slotLimit,
+    remaining: Math.max(0, slotLimit - booked),
     booked,
     bookings: bookingsWithAgency.map((b: any) => ({
-      id: b.id,
+      id: String(b.id),
       people_count: b.peopleCount,
-      agency_id: b.agencyId,
-      agency_name: b.agency?.name || "Unknown",
+      agency_id: String(b.agencyId),
+      agency_name: b.agency?.agencyName || "Unknown",
       status: b.status,
       precise_time: b.preciseTime,
     })),

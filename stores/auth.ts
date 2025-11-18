@@ -8,7 +8,7 @@ type LoginResponse = {
   role: UserRole;
 };
 
-type UserRole = "admin" | "agency" | null;
+type UserRole = "admin" | "agent" | null;
 
 export const useAuthStore = defineStore("auth", () => {
   const token = useCookie<string | null>("access_token");

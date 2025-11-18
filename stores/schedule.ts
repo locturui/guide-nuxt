@@ -9,6 +9,7 @@ export const useScheduleStore = defineStore("schedule", () => {
   const timeSlots = ref<DayDTO[]>([]);
   const extraSlotData = reactive<Record<string, { limit: number; remaining: number }>>({});
   const selectedSlots = reactive<Record<string, boolean>>({});
+  const selectMode = ref(false);
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -105,6 +106,13 @@ export const useScheduleStore = defineStore("schedule", () => {
   }
   function clearSelection() {
     Object.keys(selectedSlots).forEach(k => delete selectedSlots[k]);
+    selectMode.value = false;
+  }
+  function setSelectMode(enabled: boolean) {
+    selectMode.value = enabled;
+    if (!enabled) {
+      clearSelection();
+    }
   }
 
   async function setDayCategory(dateStr: string, payload: { category: string; limit?: number }) {
@@ -166,6 +174,7 @@ export const useScheduleStore = defineStore("schedule", () => {
     timeSlots,
     extraSlotData,
     selectedSlots,
+    selectMode,
     loading,
     error,
     slotMap,
@@ -178,6 +187,7 @@ export const useScheduleStore = defineStore("schedule", () => {
     fetchSlotData,
     toggleSelect,
     clearSelection,
+    setSelectMode,
     setDayCategory,
     setTimeslotLimit,
     bulkSetTimeslotLimits,

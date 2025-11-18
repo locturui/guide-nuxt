@@ -28,12 +28,12 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const oldName = agency.name;
+  const oldName = agency.agencyName;
 
   await db
     .update(schema.users)
     .set({
-      name: new_name,
+      agencyName: new_name,
       updatedAt: new Date(),
     })
     .where(eq(schema.users.id, agency_id));

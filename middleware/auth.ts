@@ -1,17 +1,24 @@
 export default defineNuxtRouteMiddleware((to) => {
-  if (import.meta.server) {
+  const auth = useAuthStore();
+
+  const routeAccessMap: Record<string, (string | null)[]> = {
+    bookings: ["admin", "agency"],
+    index: [null, "admin", "agency"],
+    login: [null],
+    account: ["admin", "agency"],
+  };
+
+  const allowedRoles = routeAccessMap[to.name as string];
+
+  if (!allowedRoles) {
     return;
   }
 
-  const publicRoutes = ["index", "login", "404"];
-
-  if (to.name && publicRoutes.includes(to.name as string)) {
-    return;
-  }
-
-  const accessToken = useCookie("access_token");
-
-  if (!accessToken.value) {
+  if (!auth.isAuthenticated && !allowedRoles.includes(null)) {
     return navigateTo("/login");
+  }
+
+  if (auth.role && !allowedRoles.includes(auth.role)) {
+    return navigateTo("/");
   }
 });

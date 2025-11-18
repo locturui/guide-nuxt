@@ -14,15 +14,19 @@ const label = computed(() =>
 </script>
 
 <template>
-  <div class="text-center font-medium relative">
-    <div
+  <div class="text-center font-medium relative" data-day-header>
+    <Button
       v-if="role === 'admin'"
-      class="inline-block mb-2 cursor-pointer px-2 py-1 rounded-md shadow-[2px_2px_6px_#00000025] hover:shadow-[3px_3px_8px_#00000035] transition-shadow bg-white"
+      :label="label"
+      text
+      size="small"
+      class="mb-2 font-medium text-green-600"
       @click="emit('toggle')"
+    />
+    <div
+      v-else
+      class="text-surface-700"
     >
-      {{ label }}
-    </div>
-    <div v-else>
       {{ label }}
     </div>
     <slot />

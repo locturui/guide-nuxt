@@ -20,7 +20,6 @@ export default defineEventHandler(async (event) => {
       name: guide.name,
       lastname: guide.lastname,
       agency_id: guide.agencyId,
-      badge_number: guide.badgeNumber,
     });
   });
 

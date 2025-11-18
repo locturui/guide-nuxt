@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event);
-  const { name, lastname, badge_number } = body;
+  const { name, lastname } = body;
 
   if (!name || !lastname) {
     throw createError({
@@ -29,7 +29,6 @@ export default defineEventHandler(async (event) => {
       agencyId: auth.userId,
       name,
       lastname,
-      badgeNumber: badge_number || null,
     })
     .returning();
 
@@ -38,6 +37,5 @@ export default defineEventHandler(async (event) => {
     name: guide.name,
     lastname: guide.lastname,
     agency_id: guide.agencyId,
-    badge_number: guide.badgeNumber,
   };
 });

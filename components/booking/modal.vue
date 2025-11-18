@@ -147,124 +147,144 @@ function onEditBooking() {
 
 <template>
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4" @click="$emit('close')">
-    <div
-      class="bg-white p-4 sm:p-6 rounded-lg relative w-full max-w-sm"
+    <Card
+      class="w-full max-w-sm relative"
       @click.stop
     >
-      <button
-        class="absolute top-2 right-2 btn btn-sm btn-circle btn-ghost"
-        @click="$emit('close')"
-      >
-        ✕
-      </button>
-      <h3 class="font-bold mb-2">
-        {{ editing ? 'Бронирование' : 'Новое бронирование' }}
-      </h3>
-
-      <template v-if="!editing">
-        <label class="block">Дата</label>
-        <Datepicker
-          v-model="formDate"
-          locale="ru"
-          model-type="yyyy-MM-dd"
-          :auto-apply="true"
-          :teleport="true"
-          :ui="{ input: 'input mb-1' }"
-          :disabled="pending"
-          :enable-time-picker="false"
-          :close-on-auto-apply="true"
-        />
-
-        <label class="block">Время</label>
-        <Datepicker
-          v-model="formTime"
-          locale="ru"
-          time-picker
-          is-24
-          model-type="HH:mm"
-          :minutes-increment="30"
-          :minutes-grid-increment="30"
-          :min-time="{ hours: 9, minutes: 0 }"
-          :max-time="{ hours: 19, minutes: 30 }"
-          :auto-apply="true"
-          :teleport="true"
-          :ui="{ input: 'input mb-1' }"
-          :disabled="pending"
-          :close-on-auto-apply="true"
-        />
-
-        <label class="block">Количество гостей (макс. {{ maxLeft }})</label>
-        <input
-          v-model.number="formGuests"
-          type="number"
-          min="1"
-          :max="maxLeft"
-          class="input mb-1"
-          :disabled="pending"
-        >
-        <div v-if="showGuestWarning" class="text-red-600 text-sm mb-2">
-          ⚠️ Количество гостей превышает максимально доступное для данного слота
+      <template #header>
+        <div class="flex items-center justify-between p-4 pb-2">
+          <h3 class="text-lg font-semibold m-0">
+            {{ editing ? 'Бронирование' : 'Новое бронирование' }}
+          </h3>
+          <Button
+            icon="pi pi-times"
+            text
+            rounded
+            size="small"
+            @click="$emit('close')"
+          />
         </div>
       </template>
-
-      <template v-else>
-        <div class="space-y-4">
-          <div class="p-4 bg-gray-50 rounded-lg">
-            <h4 class="font-semibold mb-2">
-              Информация о бронировании
-            </h4>
-            <div class="space-y-2 text-sm">
-              <div><strong>ID:</strong> {{ props.booking?.id }}</div>
-              <div><strong>Дата:</strong> {{ props.booking?.date }}</div>
-              <div><strong>Время:</strong> {{ props.booking?.time }}</div>
-              <div><strong>Гостей:</strong> {{ props.booking?.guests }}</div>
-            </div>
+      <template #content>
+        <template v-if="!editing">
+          <div class="flex flex-col gap-2 mb-4">
+            <label class="text-sm font-medium text-surface-700">Дата</label>
+            <Datepicker
+              v-model="formDate"
+              locale="ru"
+              model-type="yyyy-MM-dd"
+              :auto-apply="true"
+              :teleport="true"
+              :ui="{ input: 'p-inputtext w-full' }"
+              :disabled="pending"
+              :enable-time-picker="false"
+              :close-on-auto-apply="true"
+            />
           </div>
 
-          <div v-if="role === 'agency' && hasGuestList" class="p-4 bg-green-50 rounded-lg">
-            <div class="text-green-800 text-sm">
-              ✓ Список гостей загружен
-            </div>
+          <div class="flex flex-col gap-2 mb-4">
+            <label class="text-sm font-medium text-surface-700">Время</label>
+            <Datepicker
+              v-model="formTime"
+              locale="ru"
+              time-picker
+              is-24
+              model-type="HH:mm"
+              :minutes-increment="30"
+              :minutes-grid-increment="30"
+              :min-time="{ hours: 8, minutes: 0 }"
+              :max-time="{ hours: 19, minutes: 30 }"
+              :auto-apply="true"
+              :teleport="true"
+              :ui="{ input: 'p-inputtext w-full' }"
+              :disabled="pending"
+              :close-on-auto-apply="true"
+            />
           </div>
 
-          <div v-if="role === 'agency' && isAssigned" class="p-4 bg-blue-50 rounded-lg">
-            <div class="text-blue-800 text-sm">
-              ✓ Гид назначен
-            </div>
+          <div class="flex flex-col gap-2 mb-4">
+            <label class="text-sm font-medium text-surface-700">Количество гостей (макс. {{ maxLeft }})</label>
+            <InputNumber
+              v-model="formGuests"
+              :min="0"
+              :max="maxLeft"
+              :disabled="pending"
+              show-buttons
+              class="w-full"
+            />
+            <Message
+              v-if="showGuestWarning"
+              severity="warn"
+              class="mt-2"
+            >
+              Количество гостей превышает максимально доступное для данного слота
+            </Message>
           </div>
+        </template>
+
+        <template v-else>
+          <div class="space-y-4">
+            <Card>
+              <template #content>
+                <h4 class="font-semibold mb-2 text-surface-900">
+                  Информация о бронировании
+                </h4>
+                <div class="space-y-2 text-sm text-surface-700">
+                  <div><strong>ID:</strong> {{ props.booking?.id }}</div>
+                  <div><strong>Дата:</strong> {{ props.booking?.date }}</div>
+                  <div><strong>Время:</strong> {{ props.booking?.time }}</div>
+                  <div><strong>Гостей:</strong> {{ props.booking?.guests }}</div>
+                </div>
+              </template>
+            </Card>
+
+            <Message
+              v-if="role === 'agency' && hasGuestList"
+              severity="success"
+            >
+              Список гостей загружен
+            </Message>
+
+            <Message
+              v-if="role === 'agency' && isAssigned"
+              severity="info"
+            >
+              Гид назначен
+            </Message>
+          </div>
+        </template>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <Button
+            v-if="editing"
+            label="Удалить"
+            icon="pi pi-trash"
+            severity="danger"
+            size="small"
+            :loading="pending"
+            :disabled="pending"
+            @click="onDelete"
+          />
+          <Button
+            v-if="editing"
+            label="Редактировать"
+            icon="pi pi-pencil"
+            size="small"
+            :disabled="pending"
+            @click="onEditBooking"
+          />
+          <Button
+            v-if="!editing"
+            label="Создать"
+            icon="pi pi-check"
+            size="small"
+            :loading="pending"
+            :disabled="pending"
+            @click="onSave"
+          />
         </div>
       </template>
-
-      <div class="flex justify-end space-x-2 mt-4">
-        <button
-          v-if="editing"
-          class="btn btn-sm btn-error"
-          :disabled="pending"
-          :class="{ 'btn-disabled': pending }"
-          @click="onDelete"
-        >
-          <span v-if="pending" class="loading loading-dots loading-sm" />
-          <span v-else>Удалить</span>
-        </button>
-        <button
-          v-if="editing"
-          class="btn btn-sm btn-primary"
-          :disabled="pending"
-          @click="onEditBooking"
-        >
-          Редактировать
-        </button>
-        <button
-          v-if="!editing"
-          class="btn btn-sm btn-primary"
-          :disabled="pending"
-          :class="{ 'btn-disabled': pending }"
-          @click="onSave"
-        >
-          <span v-if="pending" class="loading loading-dots loading-sm" />
-          <span v-else>Создать</span>
-        </button>
-      </div>
-    </div>
+    </Card>
   </div>
 </template>
