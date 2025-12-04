@@ -42,7 +42,8 @@ export const useScheduleStore = defineStore("schedule", () => {
           agentName: b.agency_name,
           status: b.status,
           preciseTime: b.precise_time,
-          immediate: (b as any).immediate,
+          bookingType: (b as any).booking_type || "regular",
+          immediate: (b as any).booking_type === "immediate",
         })),
       ),
     ));

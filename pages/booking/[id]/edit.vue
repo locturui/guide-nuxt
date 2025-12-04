@@ -696,16 +696,17 @@ async function onChangeGuideSelect(index: number) {
           <p class="text-surface-600 mt-2">
             ID: {{ bookingId }}
           </p>
+          <Tag
+            v-if="booking?.bookingType === 'immediate' || booking?.immediate"
+            severity="warning"
+            value="Залётные"
+            class="border-2 border-dashed border-amber-600 mt-1"
+          />
           <div class="mt-2 flex items-center gap-2 flex-wrap">
             <Tag
-              v-if="role === 'admin' && booking.agentName"
+              v-if="role === 'admin' && booking?.agentName"
               severity="info"
               :value="booking.agentName"
-            />
-            <Tag
-              v-if="booking.immediate"
-              severity="warning"
-              value="Залётные"
             />
           </div>
         </div>

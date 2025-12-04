@@ -25,7 +25,7 @@ const emit = defineEmits<{
       <div
         v-for="d in days"
         :key="d.toISOString() + time"
-        class="relative"
+        class="relative overflow-visible"
       >
         <BookingSlotCell
           :date="d"

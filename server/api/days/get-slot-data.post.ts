@@ -100,6 +100,7 @@ export default defineEventHandler(async (event) => {
       agency_name: b.agency?.agencyName || "Unknown",
       status: b.status,
       precise_time: b.preciseTime,
+      booking_type: b.bookingType || "regular",
     })),
   };
 });

@@ -7,8 +7,7 @@ import { formatDateInput, formatPhoneInput } from "@/utils/input-format";
 const route = useRoute();
 const s = useScheduleStore();
 
-type Guest = { name: string; date_of_birth: string; city: string; phone: string };
-type ExcelGuest = Guest & { errors?: string[] };
+type Guest = { name: string; date_of_birth: string; city: string; phone: string; errors?: string[] };
 
 const date = ref<string>((route.query.date as string) || "");
 const time = ref<string>((route.query.time as string) || "");
@@ -25,7 +24,7 @@ const capacityLoading = ref(false);
 const excelErrors = ref<string[]>([]);
 
 const manualGuests = ref<Guest[]>([]);
-const excelGuests = ref<ExcelGuest[]>([]);
+const excelGuests = ref<Guest[]>([]);
 const excelFile = ref<File | null>(null);
 
 const error = ref("");
@@ -173,33 +172,31 @@ function validateGuestRow(guest: Guest): string[] {
 function validateManualForPreview() {
   error.value = "";
   success.value = "";
+  for (const guest of manualGuests.value) {
+    guest.errors = validateGuestRow(guest);
+  }
+  excelErrors.value = [];
+  recomputeManualReady();
   if (!date.value || !time.value || people.value < 1) {
     error.value = "Заполните дату, слот и количество гостей";
-    manualReady.value = false;
-    return;
   }
-  if (maxGuests.value !== null && maxGuests.value === 0) {
+  else if (maxGuests.value !== null && maxGuests.value === 0) {
     error.value = "В выбранном слоте нет свободных мест";
-    manualReady.value = false;
-    return;
   }
-  if (isOverCapacity.value) {
+  else if (isOverCapacity.value) {
     error.value = `Доступно мест: ${maxGuests.value}`;
-    manualReady.value = false;
-    return;
   }
-  if (manualGuests.value.length !== people.value) {
+  else if (manualGuests.value.length !== people.value) {
     error.value = `Гостей: ${manualGuests.value.length} / ${people.value}`;
-    manualReady.value = false;
-    return;
   }
-  const hasErrors = manualGuests.value.some(guest => validateGuestRow(guest).length > 0);
-  manualReady.value = !hasErrors;
 }
 
 function openManualPreview() {
   manualPreview.value = false;
   excelPreview.value = false;
+  for (const guest of manualGuests.value) {
+    guest.errors = validateGuestRow(guest);
+  }
   validateManualForPreview();
   if (!manualReady.value)
     return;
@@ -318,11 +315,20 @@ async function previewExcel() {
   }
 }
 
-function updateExcelRow(row: ExcelGuest) {
+function updateExcelRow(row: Guest) {
   row.date_of_birth = formatDateInput(row.date_of_birth || "");
   row.phone = formatPhoneInput(row.phone || "");
   row.errors = validateGuestRow(row);
+  excelErrors.value = [];
   recomputeExcelReady();
+}
+
+function updateManualRow(row: Guest) {
+  row.date_of_birth = formatDateInput(row.date_of_birth || "");
+  row.phone = formatPhoneInput(row.phone || "");
+  row.errors = validateGuestRow(row);
+  excelErrors.value = [];
+  recomputeManualReady();
 }
 
 function recomputeExcelReady() {
@@ -331,6 +337,27 @@ function recomputeExcelReady() {
   const hasGuests = excelGuests.value.length > 0;
   const capacityOk = !(maxGuests.value !== null && excelGuests.value.length > maxGuests.value);
   excelReady.value = hasGuests && !hasRowErrors && !hasGeneralErrors && capacityOk;
+}
+
+function recomputeManualReady() {
+  if (!date.value || !time.value || people.value < 1) {
+    manualReady.value = false;
+    return;
+  }
+  if (maxGuests.value !== null && maxGuests.value === 0) {
+    manualReady.value = false;
+    return;
+  }
+  if (isOverCapacity.value) {
+    manualReady.value = false;
+    return;
+  }
+  if (manualGuests.value.length !== people.value) {
+    manualReady.value = false;
+    return;
+  }
+  const hasRowErrors = manualGuests.value.some(row => row.errors && row.errors.length > 0);
+  manualReady.value = !hasRowErrors;
 }
 
 async function submitExcelEdited() {
@@ -373,7 +400,35 @@ async function submitExcelEdited() {
     success.value = (response as any)?.detail || "Создано";
   }
   catch (err: any) {
-    error.value = err?.data?.detail || err?.message || "Не удалось создать";
+    if (err?.response?.status === 400 && err?.data) {
+      const responseData = err.data;
+      if (Array.isArray(responseData.errors) && responseData.errors.length > 0) {
+        excelErrors.value = responseData.errors;
+        error.value = responseData.errors.join(", ");
+      }
+      else {
+        error.value = responseData.detail || responseData.message || "Не удалось создать";
+      }
+      if (Array.isArray(responseData.guests)) {
+        excelGuests.value = responseData.guests.map((guest: any) => {
+          const formattedGuest = {
+            ...guest,
+            date_of_birth: formatDateInput(guest.date_of_birth || ""),
+            phone: formatPhoneInput(guest.phone || ""),
+          };
+          return {
+            ...formattedGuest,
+            errors: Array.isArray(guest?.errors) ? guest.errors : validateGuestRow(formattedGuest),
+          };
+        });
+        excelPreview.value = true;
+        manualPreview.value = false;
+        recomputeExcelReady();
+      }
+    }
+    else {
+      error.value = err?.data?.detail || err?.message || "Не удалось создать";
+    }
   }
   finally {
     pending.value = false;
@@ -701,7 +756,7 @@ async function submitExcelEdited() {
           </div>
 
           <Message
-            v-if="excelPreview && excelErrors.length"
+            v-if="showPreview && excelErrors.length"
             severity="error"
             class="mb-4"
           >
@@ -724,108 +779,18 @@ async function submitExcelEdited() {
           </Message>
 
           <div
-            v-if="manualPreview"
-            class="rounded-lg overflow-hidden"
+            class="rounded-lg overflow-hidden flex flex-col"
             style="max-height: 24rem; border: 1px solid rgb(243 244 246);"
           >
-            <div class="overflow-y-auto">
-              <div class="md:hidden space-y-2 p-3">
-                <div
-                  v-for="(guest, index) in manualGuests"
-                  :key="index"
-                  class="border rounded p-3 bg-white"
-                  style="border-color: rgb(243 244 246);"
-                >
-                  <div class="flex items-center justify-between mb-2">
-                    <span class="text-sm text-surface-500">#{{ index + 1 }}</span>
-                  </div>
-                  <div class="grid grid-cols-1 gap-2 text-sm">
-                    <div>
-                      <div class="text-surface-500">
-                        Имя
-                      </div>
-                      <div class="text-surface-900 break-words">
-                        {{ guest.name }}
-                      </div>
-                    </div>
-                    <div>
-                      <div class="text-surface-500">
-                        ДР
-                      </div>
-                      <div class="text-surface-900 break-words">
-                        {{ guest.date_of_birth }}
-                      </div>
-                    </div>
-                    <div>
-                      <div class="text-surface-500">
-                        Город
-                      </div>
-                      <div class="text-surface-900 break-words">
-                        {{ guest.city }}
-                      </div>
-                    </div>
-                    <div>
-                      <div class="text-surface-500">
-                        Телефон
-                      </div>
-                      <div class="text-surface-900 break-words">
-                        {{ guest.phone }}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="hidden md:block">
-                <DataTable
-                  :value="manualGuests"
-                  striped-rows
-                  size="small"
-                  class="w-full"
-                >
-                  <Column
-                    field="index"
-                    header="#"
-                    style="width: 3rem"
-                  >
-                    <template #body="{ index }">
-                      {{ index + 1 }}
-                    </template>
-                  </Column>
-                  <Column
-                    field="name"
-                    header="Имя"
-                  />
-                  <Column
-                    field="date_of_birth"
-                    header="ДР"
-                  />
-                  <Column
-                    field="city"
-                    header="Город"
-                  />
-                  <Column
-                    field="phone"
-                    header="Телефон"
-                  />
-                </DataTable>
-              </div>
-            </div>
-          </div>
-
-          <div
-            v-else
-            class="rounded-lg overflow-hidden"
-            style="max-height: 24rem; border: 1px solid rgb(243 244 246);"
-          >
-            <div class="p-3 bg-blue-50 border-b" style="border-color: rgb(243 244 246);">
+            <div class="p-3 bg-blue-50 border-b flex-shrink-0" style="border-color: rgb(243 244 246);">
               <div class="text-sm text-blue-800">
                 <strong>Предпросмотр:</strong> Вы можете редактировать данные перед подтверждением
               </div>
             </div>
-            <div class="overflow-y-auto">
+            <div class="overflow-y-auto flex-1">
               <div class="space-y-2 p-3">
                 <div
-                  v-for="(guest, index) in excelGuests"
+                  v-for="(guest, index) in (manualPreview ? manualGuests : excelGuests)"
                   :key="index"
                   class="border rounded p-3"
                   :class="guest.errors && guest.errors.length ? 'border-red-300 bg-red-50' : ''"
@@ -861,7 +826,7 @@ async function submitExcelEdited() {
                         size="small"
                         placeholder="Имя"
                         class="w-full"
-                        @input="updateExcelRow(guest)"
+                        @input="manualPreview ? updateManualRow(guest) : updateExcelRow(guest)"
                       />
                     </div>
                     <div>
@@ -871,7 +836,7 @@ async function submitExcelEdited() {
                         size="small"
                         placeholder="ДД.ММ.ГГГГ"
                         class="w-full"
-                        @input="updateExcelRow(guest)"
+                        @input="manualPreview ? updateManualRow(guest) : updateExcelRow(guest)"
                       />
                     </div>
                     <div>
@@ -881,7 +846,7 @@ async function submitExcelEdited() {
                         size="small"
                         placeholder="Город"
                         class="w-full"
-                        @input="updateExcelRow(guest)"
+                        @input="manualPreview ? updateManualRow(guest) : updateExcelRow(guest)"
                       />
                     </div>
                     <div>
@@ -891,7 +856,7 @@ async function submitExcelEdited() {
                         size="small"
                         placeholder="Телефон"
                         class="w-full"
-                        @input="updateExcelRow(guest)"
+                        @input="manualPreview ? updateManualRow(guest) : updateExcelRow(guest)"
                       />
                     </div>
                   </div>

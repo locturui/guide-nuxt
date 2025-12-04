@@ -148,13 +148,13 @@ const onlyImmediateAllowed = computed(() => isImmediateOnly());
 
 <template>
   <div
-    class="p-2 sm:p-2.5 flex flex-col justify-between h-28 sm:h-36 cursor-pointer transition-all duration-200 ease-in-out transform overflow-x-visible rounded-lg relative"
+    class="p-2 sm:p-2.5 flex flex-col justify-between h-28 sm:h-36 cursor-pointer transition-all duration-200 ease-in-out transform overflow-visible rounded-lg relative"
     :class="[
       left <= 0 || isDisabled
         ? 'bg-gray-200 text-gray-500 border border-gray-300 opacity-60 cursor-not-allowed'
         : onlyImmediateAllowed && !isDisabled
-          ? 'border-amber-500 border-2 border-dashed bg-amber-50 text-amber-800 hover:bg-amber-100 hover:shadow-md hover:scale-105 hover:z-10'
-          : 'bg-white hover:bg-gray-50 hover:shadow-md hover:scale-105 hover:z-10 text-gray-700 border border-gray-100',
+          ? 'border-amber-500 border-2 border-dashed bg-amber-50 text-amber-800 hover:bg-amber-100 hover:shadow-md hover:scale-105 hover:z-50'
+          : 'bg-white hover:bg-gray-50 hover:shadow-md hover:scale-105 hover:z-50 text-gray-700 border border-gray-100',
       selectMode && (selected || isHovered) ? 'border-green-600 border-2' : '',
     ]"
     @click="() => {
@@ -169,13 +169,14 @@ const onlyImmediateAllowed = computed(() => isImmediateOnly());
       v-if="selectMode && (selected || isHovered)"
       class="absolute inset-0 bg-green-500/20 rounded-lg pointer-events-none z-0"
     />
-    <div class="relative z-10 flex flex-col flex-1 min-h-0">
+    <div class="relative z-10 flex flex-col flex-1 min-h-0 overflow-visible">
       <div class="text-xs sm:text-sm font-medium">
         {{ left }}/{{ limit }} свободно
       </div>
       <div
         v-if="bookings.length"
-        class="flex flex-wrap gap-1 overflow-y-auto overflow-x-hidden mt-1 mb-1 pr-1 relative flex-1 min-h-0 items-start content-start"
+        class="flex flex-wrap gap-1 overflow-y-auto mt-1 mb-1 pr-1 relative flex-1 min-h-0 items-start content-start"
+        style="padding: 4px; margin: -4px; clip-path: none;"
       >
         <Tag
           v-for="b in bookingsWithStatus"
@@ -183,7 +184,7 @@ const onlyImmediateAllowed = computed(() => isImmediateOnly());
           :value="`${b.agentName} - ${b.guests}`"
           :severity="b.severity"
           :data-severity="b.severity"
-          class="cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:shadow-md relative hover:z-10 text-[10px] sm:text-xs flex-shrink-0"
+          class="cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:shadow-md relative z-50 text-[10px] sm:text-xs flex-shrink-0"
           :class="[
             b.immediate ? 'border-2 border-dashed border-amber-600' : '',
             `booking-badge-${b.severity}`,

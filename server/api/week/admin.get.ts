@@ -152,6 +152,7 @@ export default defineEventHandler(async (event) => {
             agency_name: agency?.agencyName || "Unknown",
             status: bookingStatus,
             precise_time: b.preciseTime || b.time,
+            booking_type: b.bookingType || "regular",
           };
         }),
       };

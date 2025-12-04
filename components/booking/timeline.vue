@@ -91,7 +91,7 @@ function onTouchEnd(e: TouchEvent) {
               <div class="text-right pr-2 py-3 text-xs text-surface-500 select-none">
                 {{ t }}
               </div>
-              <div class="relative">
+              <div class="relative overflow-visible">
                 <BookingSlotCell
                   :date="activeDay"
                   :time="t"

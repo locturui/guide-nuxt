@@ -410,6 +410,7 @@ watch(viewMode, () => {
         <div
           ref="scrollerRef"
           class="w-full overflow-x-auto"
+          style="padding: 8px; margin: -8px;"
         >
           <TimeGrid
             v-if="!s.loading"

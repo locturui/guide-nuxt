@@ -27,7 +27,7 @@ const bookings = computed(() =>
     date: dateStr.value,
     time: props.time,
     status: b.status,
-    immediate: b.immediate,
+    immediate: b.booking_type === "immediate",
   })),
 );
 
