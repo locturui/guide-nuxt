@@ -18,7 +18,6 @@ function getTransporter() {
     return transporter;
 
   if (!SMTP_USER || !SMTP_PASS) {
-    console.warn("SMTP credentials not configured. Emails will not be sent.");
     return null;
   }
 
@@ -39,7 +38,6 @@ export async function sendEmail(to: string, subject: string, text: string, html:
   const mailer = getTransporter();
 
   if (!mailer) {
-    console.warn(`Email not sent (SMTP not configured): To=${to}, Subject=${subject}`);
     return;
   }
 
@@ -51,8 +49,6 @@ export async function sendEmail(to: string, subject: string, text: string, html:
       text,
       html,
     });
-    // eslint-disable-next-line no-console
-    console.log(`Email sent to ${to}: ${subject}`);
   }
   catch (error) {
     console.error(`Failed to send email to ${to}:`, error);

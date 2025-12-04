@@ -38,30 +38,18 @@ function getBookingBadgeSeverity(booking) {
   const hasGuestList = booking.hasGuestList;
   const hasGuides = booking.hasGuides;
 
-  console.warn("Booking badge debug:", {
-    id: booking.id,
-    status,
-    hasGuestList,
-    hasGuides,
-  });
-
   if (status === "filled") {
-    console.warn("  -> Returning warning (filled)");
     return "warning";
   }
   if (status === "assigned") {
     if (hasGuestList && !hasGuides) {
-      console.warn("  -> Returning warning (assigned but no guides in guest list)");
       return "warning";
     }
-    console.warn("  -> Returning success (assigned)");
     return "success";
   }
   if (hasGuestList) {
-    console.warn("  -> Returning warning (hasGuestList)");
     return "warning";
   }
-  console.warn("  -> Returning info (default)");
   return "info";
 }
 
