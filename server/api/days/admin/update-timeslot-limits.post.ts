@@ -18,43 +18,41 @@ export default defineEventHandler(async (event) => {
 
   const db = useDB();
   let updatedCount = 0;
+  const updatedTimeslots: Array<[string, string]> = [];
 
   for (const [date, time] of timeslots) {
-    const [existingSlot] = await db.select().from(schema.timeslots).where(
-      and(
-        eq(schema.timeslots.date, date),
-        eq(schema.timeslots.time, time),
-      ),
+    let [day] = await db.select().from(schema.days).where(eq(schema.days.date, date)).limit(1);
+    if (!day) {
+      [day] = await db.insert(schema.days).values({ date, category: "Open", limit: 51 }).returning();
+    }
+
+    let [existingSlot] = await db.select().from(schema.timeslots).where(
+      and(eq(schema.timeslots.dayId, day.id), eq(schema.timeslots.time, time)),
     ).limit(1);
 
     if (existingSlot) {
       await db
         .update(schema.timeslots)
-        .set({
-          limit,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(schema.timeslots.date, date),
-            eq(schema.timeslots.time, time),
-          ),
-        );
+        .set({ limit, limited: true })
+        .where(eq(schema.timeslots.id, existingSlot.id));
     }
     else {
-      await db.insert(schema.timeslots).values({
-        date,
+      const defaultLimit = limit;
+      [existingSlot] = await db.insert(schema.timeslots).values({
+        dayId: day.id,
         time,
-        limit,
-      });
+        limit: defaultLimit,
+        limited: true,
+      }).returning();
     }
 
     updatedCount++;
+    updatedTimeslots.push([date, time]);
   }
 
   return {
     detail: `Successfully updated ${updatedCount} timeslot(s) with new limit: ${limit}`,
     updated_count: updatedCount,
-    timeslots,
+    timeslots: updatedTimeslots,
   };
 });

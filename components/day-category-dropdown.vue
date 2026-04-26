@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { extractErrorMessage } from "@/types/errors";
+import { triggerBlobDownload } from "@/utils/download-file";
 
 const props = defineProps<{
   dateStr: string;
@@ -15,6 +16,8 @@ const category = ref<"Open" | "Limited" | "Closed">("Open");
 const limit = ref<number>(0);
 const downloadPending = ref(false);
 const downloadError = ref("");
+
+const s = useScheduleStore();
 
 watch(
   () => props.modelValue,
@@ -38,24 +41,12 @@ async function onDownloadSummary() {
   downloadPending.value = true;
   downloadError.value = "";
   try {
-    const blob = await useApi<Blob>("/days/summary", {
-      method: "POST",
-      body: { date: props.dateStr },
-      responseType: "blob",
-    });
-
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `summary_${props.dateStr}.docx`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+    const blob = await s.downloadDaySummary(props.dateStr);
+    triggerBlobDownload(blob, `summary_${props.dateStr}.docx`);
   }
-  catch (e: any) {
+  catch (e: unknown) {
     console.error("Failed to download summary:", e);
-    downloadError.value = e?.data?.detail || e?.message || "Не удалось скачать сводку";
+    downloadError.value = extractErrorMessage(e, "Не удалось скачать сводку");
   }
   finally {
     downloadPending.value = false;

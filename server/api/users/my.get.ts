@@ -13,6 +13,8 @@ export default defineEventHandler(async (event) => {
     email: schema.users.email,
     role: schema.users.role,
     agencyName: schema.users.agencyName,
+    telegramId: schema.users.telegramId,
+    telegramUsername: schema.users.telegramUsername,
   }).from(schema.users).where(
     eq(schema.users.id, auth.userId),
   ).limit(1);
@@ -29,9 +31,19 @@ export default defineEventHandler(async (event) => {
       id: user.id,
       email: user.email,
       agency_name: user.agencyName || user.email,
+      telegram_id: user.telegramId ?? null,
+      telegram_username: user.telegramUsername ?? null,
     };
   }
   else if (auth.role === "admin") {
+    return {
+      id: user.id,
+      email: user.email,
+      telegram_id: user.telegramId ?? null,
+      telegram_username: user.telegramUsername ?? null,
+    };
+  }
+  else if (auth.role === "vendor") {
     return {
       id: user.id,
       email: user.email,
@@ -40,7 +52,7 @@ export default defineEventHandler(async (event) => {
   else {
     throw createError({
       statusCode: 403,
-      message: "Invalid user role",
+      message: "Недопустимая роль пользователя",
     });
   }
 });

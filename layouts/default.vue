@@ -1,15 +1,8 @@
 <script setup lang="ts">
-import { useAuthStore } from "~/stores/auth";
-import { useApi } from "~/utils/api";
-
-type MeResponse = {
-  id: string;
-  email: string;
-  agency_name: string;
-};
-
 const auth = useAuthStore();
+const users = useUsersStore();
 const route = useRoute();
+const mainRef = ref<HTMLElement | null>(null);
 const isMobile = ref(typeof window !== "undefined" ? window.innerWidth < 768 : false);
 const sidebarExpanded = ref(false);
 const agencyName = ref<string | null>(null);
@@ -27,33 +20,105 @@ function isActiveRoute(path: string) {
   return false;
 }
 
-const menuItems = computed(() => {
+const mainMenuItems = computed(() => {
   if (!auth.isAuthenticated) {
     return [];
   }
-  return [
-    {
+  const items = [];
+
+  if (auth.role === "vendor") {
+    items.push({
+      label: "Бонусная программа",
+      icon: "pi pi-star",
+      to: "/bonus-points",
+    });
+  }
+  else {
+    items.push({
       label: "Бронирования",
       icon: "pi pi-calendar",
       to: "/bookings",
-    },
-    {
+    });
+
+    if (auth.role === "admin") {
+      items.push({
+        label: "Агентства",
+        icon: "pi pi-building",
+        to: "/agencies",
+      });
+      items.push({
+        label: "Сервисные аккаунты",
+        icon: "pi pi-users",
+        to: "/service-accounts",
+      });
+      items.push({
+        label: "Отчеты",
+        icon: "pi pi-file",
+        to: "/reports",
+      });
+      items.push({
+        label: "Бонусные баллы",
+        icon: "pi pi-star",
+        to: "/bonus-points",
+      });
+    }
+    else if (auth.role === "agency") {
+      items.push({
+        label: "Гиды",
+        icon: "pi pi-users",
+        to: "/guides",
+      });
+      items.push({
+        label: "Отчеты",
+        icon: "pi pi-file",
+        to: "/agency-reports",
+      });
+      items.push({
+        label: "Бонусная программа",
+        icon: "pi pi-star",
+        to: "/agency-bonus-program",
+      });
+    }
+
+    items.push({
+      label: "FAQ",
+      icon: "pi pi-question-circle",
+      to: "/faq",
+    });
+  }
+  return items;
+});
+
+const bottomMenuItems = computed(() => {
+  if (!auth.isAuthenticated) {
+    return [];
+  }
+  const items: Array<{
+    label: string;
+    icon: string;
+    to?: string;
+    command?: () => void;
+    class?: string;
+  }> = [];
+
+  if (auth.role !== "vendor") {
+    items.push({
       label: "Профиль",
       icon: "pi pi-user",
       to: "/account",
+    });
+  }
+
+  items.push({
+    label: "Выйти",
+    icon: "pi pi-sign-out",
+    command: () => {
+      auth.logout();
     },
-    {
-      separator: true,
-    },
-    {
-      label: "Выйти",
-      icon: "pi pi-sign-out",
-      command: () => {
-        auth.logout();
-      },
-      class: "text-red-600",
-    },
-  ];
+    class: "text-red-600",
+  });
+
+  return items;
 });
 
 async function loadAgencyName() {
@@ -61,7 +126,7 @@ async function loadAgencyName() {
     return;
   }
   try {
-    const data = await useApi<MeResponse>("/users/my");
+    const data = await users.fetchMe();
     agencyName.value = data.agency_name || null;
   }
   catch {
@@ -94,6 +159,14 @@ watch(
   },
   { immediate: false },
 );
+
+watch(
+  () => route.path,
+  () => {
+    if (mainRef.value)
+      mainRef.value.scrollTop = 0;
+  },
+);
 </script>
 
 <template>
@@ -105,7 +178,7 @@ watch(
       <button
         v-if="isMobile && !sidebarExpanded"
         type="button"
-        class="fixed top-4 left-4 z-50 rounded-full border border-gray-300 bg-white shadow-md hover:bg-gray-50 flex items-center justify-center"
+        class="fixed top-4 left-4 z-[500] rounded-full border border-gray-300 bg-white shadow-md hover:bg-gray-50 flex items-center justify-center"
         style="width: 2.5rem; height: 2.5rem; min-width: 2.5rem; min-height: 2.5rem;"
         @click="sidebarExpanded = !sidebarExpanded"
       >
@@ -115,12 +188,13 @@ watch(
 
     <div
       v-if="isMobile && sidebarExpanded"
-      class="fixed inset-0 bg-black/50 z-40"
+      class="fixed inset-0 bg-black/50 z-[499]"
       @click="sidebarExpanded = false"
     />
 
     <div
-      class="bg-surface-0 bg-white shadow-sm transition-all duration-300 z-50 flex flex-col"
+      class="bg-surface-0 shadow-sm transition-all duration-300 z-[500] flex flex-col"
+      style="background-color: var(--p-surface-0)"
       :class="isMobile
         ? (sidebarExpanded ? 'fixed left-0 top-0 h-full w-64' : 'hidden')
         : 'fixed left-0 top-0 h-full w-16'"
@@ -141,16 +215,46 @@ watch(
         />
       </div>
 
-      <nav class="flex-1 overflow-y-auto py-2 space-y-1">
-        <div
-          v-for="(item, index) in menuItems"
-          :key="index"
-        >
+      <nav class="flex flex-col flex-1 overflow-hidden">
+        <div class="flex-1 overflow-y-auto py-2 space-y-1">
           <div
-            v-if="item.separator"
-            class="my-2 mx-4 h-px bg-surface-200"
-          />
-          <template v-else>
+            v-for="(item, index) in mainMenuItems"
+            :key="index"
+          >
+            <NuxtLink
+              v-if="item.to"
+              v-tooltip.right="(!isMobile || !sidebarExpanded) ? item.label : ''"
+              :to="item.to"
+              class="flex items-center px-4 py-3 mx-2 rounded-lg transition-colors no-underline cursor-pointer"
+              :class="[
+                isMobile && sidebarExpanded ? 'justify-start gap-3' : 'justify-center',
+                isActiveRoute(item.to)
+                  ? 'bg-primary-50 text-primary-700 font-semibold hover:bg-primary-100'
+                  : 'text-surface-700 hover:bg-surface-100',
+              ]"
+              @click="() => {
+                if (isMobile && sidebarExpanded) {
+                  sidebarExpanded = false;
+                }
+              }"
+            >
+              <i :class="item.icon" class="text-lg flex-shrink-0" />
+              <span
+                v-if="isMobile && sidebarExpanded"
+                class="font-medium"
+              >
+                {{ item.label }}
+              </span>
+            </NuxtLink>
+          </div>
+        </div>
+
+        <div class="mt-auto py-2 space-y-1">
+          <div class="my-2 mx-4 h-px bg-surface-200" />
+          <div
+            v-for="(item, index) in bottomMenuItems"
+            :key="index"
+          >
             <NuxtLink
               v-if="item.to"
               v-tooltip.right="(!isMobile || !sidebarExpanded) ? item.label : ''"
@@ -201,7 +305,7 @@ watch(
                 {{ item.label }}
               </span>
             </button>
-          </template>
+          </div>
         </div>
       </nav>
     </div>
@@ -212,7 +316,7 @@ watch(
         ? 'ml-0'
         : 'ml-16'"
     >
-      <main class="flex-1 overflow-auto bg-surface-ground">
+      <main ref="mainRef" class="flex-1 overflow-auto bg-surface-ground">
         <div class="p-4 md:p-6" :class="isMobile ? 'pt-16' : ''">
           <slot />
         </div>

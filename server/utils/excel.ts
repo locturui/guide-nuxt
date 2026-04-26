@@ -5,6 +5,7 @@ export type GuestData = {
   date_of_birth: string;
   city: string;
   phone: string;
+  email: string;
   errors: string[];
 };
 
@@ -20,7 +21,7 @@ export async function parseExcelFile(buffer: ArrayBuffer): Promise<{ guests: Gue
 
     const headers = worksheet.getRow(1).values as any[];
     const requiredColumns = ["ФИО", "Дата рождения", "Город", "Телефон"];
-    const missingCols = requiredColumns.filter(col => !headers.includes(col));
+    const missingCols = requiredColumns.filter(col => !headers.some((h: any) => String(h ?? "").trim().toLowerCase() === col.toLowerCase()));
 
     if (missingCols.length > 0) {
       return {
@@ -49,6 +50,7 @@ export async function parseExcelFile(buffer: ArrayBuffer): Promise<{ guests: Gue
       const dateOfBirth = parseDateValue(rowData["Дата рождения"]);
       const city = String(rowData["Город"] || "").trim();
       const phone = normalizePhone(String(rowData["Телефон"] || "").trim());
+      const email = String(rowData["Почта"] || rowData.Email || rowData["E-mail"] || "").trim();
 
       if (!name)
         rowErrors.push("Имя обязательно");
@@ -58,6 +60,9 @@ export async function parseExcelFile(buffer: ArrayBuffer): Promise<{ guests: Gue
         rowErrors.push("Город обязателен");
       if (!phone)
         rowErrors.push("Номер телефона обязателен");
+      if (email && !/[^@]+@[^@]+\.[^@]+/.test(email)) {
+        rowErrors.push("Неверный формат email. Ожидается user@example.com");
+      }
 
       if (dateOfBirth && !isValidDateFormat(dateOfBirth)) {
         rowErrors.push(`Неверный формат даты '${dateOfBirth}'. Ожидается DD.MM.YYYY`);
@@ -65,8 +70,8 @@ export async function parseExcelFile(buffer: ArrayBuffer): Promise<{ guests: Gue
 
       if (dateOfBirth && isValidDateFormat(dateOfBirth)) {
         const age = calculateAge(dateOfBirth);
-        if (age < 12) {
-          rowErrors.push(`Гость должен быть не младше 12 лет. Текущий возраст: ${age}`);
+        if (age < 6) {
+          rowErrors.push(`Гость должен быть не младше 6 лет. Текущий возраст: ${age}`);
         }
       }
 
@@ -75,6 +80,7 @@ export async function parseExcelFile(buffer: ArrayBuffer): Promise<{ guests: Gue
         date_of_birth: dateOfBirth,
         city,
         phone,
+        email,
         errors: rowErrors,
       });
     });
@@ -167,7 +173,7 @@ export function validateGuestCount(guestCount: number, bookingPeopleCount: numbe
   return errors;
 }
 
-export function validateAgeDistribution(guests: GuestData[]): string[] {
+export function validateAgeDistribution(guests: GuestData[], peopleCount?: number): string[] {
   const errors: string[] = [];
   const ages: number[] = [];
 
@@ -177,11 +183,29 @@ export function validateAgeDistribution(guests: GuestData[]): string[] {
     }
   }
 
-  const adults = ages.filter(age => age >= 18).length;
-  const minors = ages.filter(age => age < 18).length;
+  if (ages.length === 0)
+    return errors;
 
-  if (minors > adults) {
-    errors.push(`Количество взрослых должно быть не менее количества детей (${adults} < ${minors})`);
+  const total = peopleCount ?? guests.length;
+  const childrenUnder6 = ages.filter(a => a < 6).length;
+  if (childrenUnder6 > 0) {
+    errors.push(`Дети младше 6 лет не допускаются. Найдено: ${childrenUnder6}`);
+    return errors;
+  }
+
+  if (total > 9) {
+    const children6to9 = ages.filter(a => a >= 6 && a <= 9).length;
+    const maxChildren = Math.floor(total / 17);
+    if (children6to9 > maxChildren) {
+      errors.push(`Для организованной группы из ${total} человек допускается не более ${maxChildren} детей от 6 до 9 лет. Найдено: ${children6to9}`);
+    }
+  }
+  else {
+    const adults = ages.filter(a => a >= 18).length;
+    const children6to8 = ages.filter(a => a >= 6 && a <= 8).length;
+    if (children6to8 > adults) {
+      errors.push(`Для семейной группы требуется минимум по 1 взрослому на каждого ребенка 6-8 лет. Взрослых: ${adults}, детей 6-8 лет: ${children6to8}`);
+    }
   }
 
   return errors;

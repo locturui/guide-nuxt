@@ -1,7 +1,8 @@
 type PreviewData = {
   booking_id: string;
   agency_id: string;
-  guest_previews: any[];
+  guest_previews?: any[];
+  guests?: any[];
   general_errors: string[];
 };
 

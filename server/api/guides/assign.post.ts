@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { schema, useDB } from "~/server/db";
 import { requireAuth } from "~/server/utils/auth";
@@ -35,13 +35,14 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const [guide] = await db.select().from(schema.guides).where(eq(schema.guides.id, guide_id),
+  const [guide] = await db.select().from(schema.guides).where(
+    and(eq(schema.guides.id, guide_id), eq(schema.guides.removed, false)),
   ).limit(1);
 
   if (!guide || guide.agencyId !== auth.userId) {
     throw createError({
       statusCode: 404,
-      message: "Guide not found or doesn't belong to your agency",
+      message: "Гид не найден или не принадлежит вашему агентству",
     });
   }
 
@@ -55,13 +56,14 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const [existingAssignment] = await db.select().from(schema.guideAssignments).where(eq(schema.guideAssignments.bookingId, booking_id),
+  const existingForGuide = await db.select().from(schema.guideAssignments).where(
+    and(eq(schema.guideAssignments.bookingId, booking_id), eq(schema.guideAssignments.guideId, guide_id)),
   ).limit(1);
 
-  if (existingAssignment) {
+  if (existingForGuide.length > 0) {
     throw createError({
       statusCode: 400,
-      message: "Guide already assigned to this booking",
+      message: "Гид уже назначен на это бронирование",
     });
   }
 
@@ -73,13 +75,12 @@ export default defineEventHandler(async (event) => {
     })
     .returning();
 
-  await db
-    .update(schema.bookings)
-    .set({ status: "assigned" })
-    .where(eq(schema.bookings.id, booking_id));
+  const allAssignments = await db.select().from(schema.guideAssignments).where(eq(schema.guideAssignments.bookingId, booking_id));
+  const assignedCount = allAssignments.length;
+  const required = Math.max(1, Math.ceil(booking.peopleCount / 17));
 
   return {
-    detail: "Гид успешно назначен на бронирование",
+    detail: `Гид успешно назначен на бронирование. Назначено гидов: ${assignedCount}/${required}.`,
     assignment_id: assignment.id,
     booking_id,
     guide_id,

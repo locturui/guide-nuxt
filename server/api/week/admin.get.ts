@@ -63,7 +63,7 @@ export default defineEventHandler(async (event) => {
           inArray(schema.bookings.timeslotId, timeslotIds),
         )
       : [],
-    db.select({ id: schema.users.id, agencyName: schema.users.agencyName }).from(schema.users),
+    db.select({ id: schema.users.id, email: schema.users.email, agencyName: schema.users.agencyName }).from(schema.users),
     db.select().from(schema.guestLists),
     db.select().from(schema.guideAssignments),
   ]);
@@ -126,7 +126,6 @@ export default defineEventHandler(async (event) => {
 
       const limit = slot?.limit ?? dayLimit;
       const booked = slotBookings
-        .filter((b: any) => b.status !== "cancelled")
         .reduce((sum: number, b: any) => sum + b.peopleCount, 0);
 
       return {
@@ -137,8 +136,8 @@ export default defineEventHandler(async (event) => {
           const hasGuestList = guestListByBookingId.has(b.id);
           const hasGuide = guideAssignmentByBookingId.has(b.id);
 
-          let bookingStatus = b.status || "booked";
-          if (hasGuestList && bookingStatus === "booked")
+          let bookingStatus = "booked";
+          if (hasGuestList)
             bookingStatus = "filled";
           if (hasGuide)
             bookingStatus = "assigned";
@@ -149,10 +148,14 @@ export default defineEventHandler(async (event) => {
             id: String(b.id),
             people_count: b.peopleCount,
             agency_id: String(b.agencyId),
+            agency_email: agency?.email || "Unknown",
             agency_name: agency?.agencyName || "Unknown",
             status: bookingStatus,
             precise_time: b.preciseTime || b.time,
             booking_type: b.bookingType || "regular",
+            is_radio: !!b.isRadio,
+            curator_name: b.curatorName,
+            driver_name: b.driverName,
           };
         }),
       };

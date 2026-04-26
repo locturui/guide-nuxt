@@ -2,15 +2,14 @@
 import Datepicker from "@vuepic/vue-datepicker";
 import "@vuepic/vue-datepicker/dist/main.css";
 
-import type { Guest } from "@/stores/guest-lists";
+import type { GuestListNewConfirmResponse } from "@/types/api";
+import type { Guest, GuestList, Guide } from "@/types/domain";
 
-import { useAgenciesStore } from "@/stores/agencies";
-import { useGuestListsStore } from "@/stores/guest-lists";
-import { useGuidesStore } from "@/stores/guides";
-import { useScheduleStore } from "@/stores/schedule";
+import { asApiError, extractErrorMessage, isRecord, toErrorString } from "@/types/errors";
+import { startOfWeek } from "@/utils/date";
 import { formatDateInput, formatPhoneInput } from "@/utils/input-format";
-import { startOfWeek } from "~/utils/date";
-import { isHalfHour, roundToHalfHour } from "~/utils/time";
+import { normalizeGeneralErrors, normalizePreviewGuests, normalizeSheetErrors } from "@/utils/normalize-preview";
+import { isHalfHour, roundToHalfHour } from "@/utils/time";
 
 const route = useRoute();
 const auth = useAuthStore();
@@ -29,8 +28,19 @@ const glPending = ref(false);
 const glError = ref("");
 const glSuccess = ref("");
 const glFile = ref<File | null>(null);
-const glPreview: Ref<{ preview_id?: string; guests: Guest[]; errors: string[]; _validating?: boolean; booking_id?: string; guest_list?: any } | null> = ref(null);
-const manualGuests = ref<Guest[]>([]);
+
+type FileUploadSelectEvent = { files?: File[]; originalEvent?: Event };
+
+type GuestListPreviewPayload = {
+  preview_id?: string;
+  guests: Array<Guest & { errors?: string[] }>;
+  errors: (string | { message: string })[];
+  _validating?: boolean;
+  booking_id?: string;
+  guest_list?: GuestList;
+};
+
+const glPreview: Ref<GuestListPreviewPayload | null> = ref(null);
 
 const booking = computed(() => {
   return s.allBookings.find(b => String(b.id) === bookingId);
@@ -40,16 +50,48 @@ const hasGuestList = computed(() => {
   return booking.value?.id ? gl.hasGuestList(booking.value.id) : false;
 });
 
+const globalErrors = computed(() => normalizeGeneralErrors(glPreview.value?.errors ?? []));
+
+const sheetErrors = computed(() => normalizeSheetErrors(glPreview.value?.errors ?? []));
+
+const assignedGuideIds = computed(() => {
+  if (!booking.value?.id || !hasGuestList.value)
+    return [] as string[];
+  const guestList = gl.byBookingId[String(booking.value.id)]?.list;
+  return Array.isArray(guestList?.guide_ids) ? guestList!.guide_ids : [];
+});
+
 const assignedGuides = computed(() => {
   if (!booking.value?.id || !hasGuestList.value)
-    return [] as any[];
-  const guestList = gl.byBookingId[String(booking.value.id)]?.list;
-  const ids = Array.isArray(guestList?.guide_ids) ? guestList!.guide_ids : [];
-  return ids.map(id => guides.items.find(g => g.id === id)).filter(Boolean);
+    return [] as Guide[];
+  return assignedGuideIds.value
+    .map(id => guides.items.find(g => g.id === id))
+    .filter((g): g is Guide => Boolean(g));
 });
 const isAssigned = computed(() => assignedGuides.value.length > 0 || booking.value?.status === "assigned");
 const requiredGuides = computed(() => Math.max(1, Math.ceil((booking.value?.guests || 0) / 17)));
 const guideSelects = ref<string[]>([]);
+
+function bookingDateTime(dateStr: string, timeStr: string) {
+  const d = dateStr?.trim();
+  const t = timeStr?.trim();
+  if (!d || !t)
+    return null;
+  const dt = new Date(`${d}T${t}:00`);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+const isPastBooking = computed(() => {
+  if (!booking.value)
+    return false;
+  const t = booking.value.preciseTime || booking.value.time;
+  const dt = bookingDateTime(booking.value.date, t);
+  if (!dt)
+    return false;
+  return dt.getTime() < Date.now();
+});
+
+const isAdminPastReadOnly = computed(() => false);
 
 function initGuideSelects() {
   const req = requiredGuides.value;
@@ -63,6 +105,12 @@ function initGuideSelects() {
 
 watch([requiredGuides, assignedGuides], initGuideSelects, { immediate: true });
 
+watch(assignedGuideIds, async (ids) => {
+  if (role !== "agency" && role !== "admin")
+    return;
+  await Promise.all(ids.filter(Boolean).map(id => guides.fetchGuideInfo(id)));
+}, { immediate: true });
+
 function availableGuidesFor(index: number) {
   const chosen = new Set(guideSelects.value.filter(Boolean));
   if (guideSelects.value[index])
@@ -74,28 +122,73 @@ const guideAssignmentPending = ref(false);
 const guideAssignmentError = ref("");
 const guideAssignmentSuccess = ref("");
 
-function normalizePreviewData(data: any) {
-  if (!data)
-    return data;
+type ApiErrorData = {
+  guests?: unknown;
+  errors?: unknown;
+  detail?: unknown;
+  preview_id?: unknown;
+};
 
-  const guests = Array.isArray(data.guests)
-    ? data.guests.map((g: any) => ({
-        ...g,
-        date_of_birth: formatDateInput(g.date_of_birth || ""),
-        phone: formatPhoneInput(g.phone || ""),
-      }))
-    : [];
+type GuestRow = {
+  id?: string | number;
+  name?: string;
+  date_of_birth?: string;
+  city?: string;
+  phone?: string;
+  email?: string;
+  row?: number;
+  age?: number;
+  errors?: string[];
+  [key: string]: unknown;
+};
 
+function asApiErrorData(v: unknown): ApiErrorData | null {
+  return isRecord(v) ? (v as ApiErrorData) : null;
+}
+
+function normalizePreviewData(data: unknown): GuestListPreviewPayload {
+  const base = (data || {}) as Partial<GuestListPreviewPayload>;
   return {
-    ...data,
-    guests,
+    ...(base as GuestListPreviewPayload),
+    guests: normalizePreviewGuests(Array.isArray(base.guests) ? base.guests : []) as GuestListPreviewPayload["guests"],
   };
+}
+
+type GuestCellEditCompleteEvent = { data: GuestRow; field?: string; newValue?: unknown };
+
+function onGuestCellEditComplete(event: GuestCellEditCompleteEvent) {
+  const data = event?.data;
+  const field = event?.field as string | undefined;
+  if (!data)
+    return;
+
+  if (field === "date_of_birth") {
+    data.date_of_birth = formatDateInput(data.date_of_birth || "");
+  }
+  if (field === "phone") {
+    data.phone = formatPhoneInput(data.phone || "");
+  }
+}
+
+function onPreviewTableCellEditComplete(payload: { data: GuestRow; field?: string; newValue?: unknown }) {
+  const row = payload?.data;
+  const field = payload?.field;
+  if (!row)
+    return;
+
+  if (field === "date_of_birth")
+    row.date_of_birth = formatDateInput(String(row.date_of_birth || ""));
+  if (field === "phone")
+    row.phone = formatPhoneInput(String(row.phone || ""));
 }
 
 const formDate = ref<string>("");
 const formTime = ref<string>("");
 const formGuests = ref<number>(1);
 const formPreciseTime = ref<string>("");
+const formIsRadio = ref<boolean>(false);
+const formCuratorName = ref<string>("");
+const formDriverName = ref<string>("");
 
 watch(booking, (newBooking) => {
   if (!newBooking && s.allBookings.length > 0) {
@@ -106,12 +199,24 @@ watch(booking, (newBooking) => {
     formTime.value = newBooking.time;
     formGuests.value = newBooking.guests;
     formPreciseTime.value = newBooking.preciseTime || newBooking.time;
+    formIsRadio.value = newBooking.isRadio || false;
+    formCuratorName.value = newBooking.curatorName || "";
+    formDriverName.value = newBooking.driverName || "";
   }
 });
 
 onMounted(async () => {
   if (!booking.value) {
-    await s.fetchWeek();
+    try {
+      const bookingInfo = await s.fetchBookingInfo(bookingId);
+
+      const bookingDate = new Date(bookingInfo.date);
+      const bookingWeekStart = startOfWeek(bookingDate);
+      await s.setWeekStart(bookingWeekStart);
+    }
+    catch {
+      await s.fetchWeek();
+    }
   }
 
   if (!booking.value) {
@@ -124,13 +229,18 @@ onMounted(async () => {
     formTime.value = booking.value.time;
     formGuests.value = booking.value.guests;
     formPreciseTime.value = booking.value.preciseTime || booking.value.time;
+    formIsRadio.value = booking.value.isRadio || false;
+    formCuratorName.value = booking.value.curatorName || "";
+    formDriverName.value = booking.value.driverName || "";
   }
 
   if (role === "agency" && booking.value?.id) {
     if (booking.value.status === "filled" || booking.value.status === "assigned") {
       await gl.fetchByBooking(booking.value.id);
     }
-    await guides.fetchGuides();
+    if (!isPastBooking.value) {
+      await guides.fetchGuides();
+    }
   }
 
   if (role === "admin" && booking.value?.id) {
@@ -173,18 +283,6 @@ watch([formDate, formTime], async ([d, t]) => {
     return;
   }
   await s.fetchSlotData(d, t);
-});
-
-watch(() => gl.byBookingId[bookingId]?.list, (list) => {
-  if (list && Array.isArray(list.guests)) {
-    manualGuests.value = list.guests.map(g => ({
-      id: g.id || "",
-      name: g.name || "",
-      date_of_birth: formatDateInput(g.date_of_birth || ""),
-      city: g.city || "",
-      phone: formatPhoneInput(g.phone || ""),
-    })) as Guest[];
-  }
 });
 
 watch(formTime, (v) => {
@@ -243,19 +341,6 @@ const showGuestWarning = computed(() => {
   return role === "agency" && formGuests.value > maxLeft.value;
 });
 
-const filledManualGuests = computed(() => {
-  return manualGuests.value.filter(g =>
-    g.name?.trim()
-    && g.date_of_birth?.trim()
-    && g.city?.trim()
-    && g.phone?.trim(),
-  ).length;
-});
-
-const hasEnoughManualGuests = computed(() => {
-  return filledManualGuests.value >= (booking.value?.guests || 0);
-});
-
 const agencyIdToName = computed(() => {
   const map: Record<string, string> = {};
   if (role === "admin" && agencies.items) {
@@ -277,14 +362,14 @@ function validateExcelFile(file: File | null): string | null {
   if (file.size > maxBytes)
     return "Файл слишком большой (макс. 8MB)";
   const name = file.name.toLowerCase();
-  const ok = name.endsWith(".xlsx") || name.endsWith(".xls");
+  const ok = name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".txt");
   if (!ok)
-    return "Поддерживаются только Excel файлы (.xlsx, .xls)";
+    return "Поддерживаются только текстовые и Excel файлы (.xlsx, .xls, .txt)";
   return null;
 }
 
 async function onSave() {
-  if (pending.value)
+  if (pending.value || isAdminPastReadOnly.value)
     return;
   if (!formDate.value || !formTime.value || formGuests.value < 1)
     return;
@@ -301,31 +386,19 @@ async function onSave() {
         time: formTime.value,
         people: formGuests.value,
         preciseTime: formPreciseTime.value || formTime.value,
+        isRadio: formIsRadio.value,
+        curatorName: formCuratorName.value || undefined,
+        driverName: formDriverName.value || undefined,
       });
-
-      // Fetch the week containing the booking's date to update the booking
-      const bookingDate = new Date(formDate.value);
-      const weekStartDate = startOfWeek(bookingDate);
-      await s.setWeekStart(weekStartDate);
-
+      await s.fetchWeek();
       saveSuccess.value = true;
       setTimeout(() => {
         saveSuccess.value = false;
       }, 3000);
     }
     else {
-      await s.modifyBooking(bookingId, formGuests.value, formPreciseTime.value || formTime.value);
-
-      // Fetch the week containing the booking's date to update the booking
-      if (booking.value?.date) {
-        const bookingDate = new Date(booking.value.date);
-        const weekStartDate = startOfWeek(bookingDate);
-        await s.setWeekStart(weekStartDate);
-      }
-      else {
-        await s.fetchWeek();
-      }
-
+      await s.modifyBooking(bookingId, formGuests.value, formPreciseTime.value || formTime.value, formIsRadio.value, formCuratorName.value || undefined, formDriverName.value || undefined);
+      await s.fetchWeek();
       saveSuccess.value = true;
       setTimeout(() => {
         saveSuccess.value = false;
@@ -337,8 +410,13 @@ async function onSave() {
   }
 }
 
-async function onFileChange(event: any) {
-  const file = event?.files && event.files[0] ? event.files[0] : (event?.target?.files && event.target.files[0]);
+async function onFileChange(event: FileUploadSelectEvent | Event | null | undefined) {
+  if (isAdminPastReadOnly.value)
+    return;
+  const maybe = event as FileUploadSelectEvent | undefined;
+  const inputEvent = event as Event | undefined;
+  const targetFiles = (inputEvent?.target as HTMLInputElement | null)?.files;
+  const file = maybe?.files?.[0] || targetFiles?.[0];
   if (!file) {
     glFile.value = null;
     glPreview.value = null;
@@ -350,6 +428,8 @@ async function onFileChange(event: any) {
 }
 
 async function onUploadPreview() {
+  if (isAdminPastReadOnly.value)
+    return;
   if (!booking.value?.id) {
     return;
   }
@@ -379,18 +459,36 @@ async function onUploadPreview() {
         glError.value = "Не удалось загрузить файл";
       }
     }
-    catch (e: any) {
-      if (e?.response?.status === 400 && e?.data) {
+    catch (e: unknown) {
+      const apiErr = asApiError(e);
+      const data = asApiErrorData(apiErr?.data);
+      if (apiErr?.response?.status === 400 && data) {
+        let normalized: GuestListPreviewPayload | null = null;
         try {
-          glPreview.value = normalizePreviewData(e.data);
-
-          if (!e.data.guests || !Array.isArray(e.data.guests) || e.data.guests.length === 0) {
-            const errorMsg = e.data.errors || e.data.detail || "Не удалось загрузить файл";
-            glError.value = Array.isArray(errorMsg) ? errorMsg.join(", ") : errorMsg;
-          }
+          normalized = normalizePreviewData(data);
         }
         catch {
-          glError.value = "Ошибка при обработке файла Excel";
+          normalized = null;
+        }
+
+        if (normalized) {
+          glPreview.value = normalized;
+        }
+        else {
+          const errorMsg = data.errors || data.detail || "Не удалось загрузить файл";
+          glPreview.value = {
+            booking_id: String(booking.value.id),
+            preview_id: typeof data.preview_id === "string" ? data.preview_id : undefined,
+            guests: [],
+            errors: Array.isArray(data.errors)
+              ? data.errors.map(e => String(e))
+              : [toErrorString(errorMsg, "Не удалось загрузить файл")],
+          };
+        }
+
+        if (!Array.isArray(glPreview.value?.guests) || glPreview.value.guests.length === 0) {
+          const errorMsg = data.errors || data.detail || "Не удалось загрузить файл";
+          glError.value = toErrorString(errorMsg, "Не удалось загрузить файл");
         }
       }
       else {
@@ -398,8 +496,8 @@ async function onUploadPreview() {
       }
     }
   }
-  catch (e: any) {
-    const errorMsg = e?.data?.detail || e?.data?.message || e?.message || "Не удалось загрузить файл";
+  catch (e: unknown) {
+    const errorMsg = extractErrorMessage(e, "Не удалось загрузить файл");
     glError.value = Array.isArray(errorMsg) ? errorMsg.join(", ") : errorMsg;
   }
   finally {
@@ -408,143 +506,112 @@ async function onUploadPreview() {
 }
 
 async function onConfirmPreview() {
+  if (isAdminPastReadOnly.value)
+    return;
   if (!booking.value?.id || !glPreview.value) {
     return;
   }
+
+  await nextTick();
+  (document.activeElement as HTMLElement | null)?.blur?.();
+  await nextTick();
+
   glError.value = "";
   glSuccess.value = "";
   glPending.value = true;
+
+  if (glPreview.value) {
+    glPreview.value.errors = [];
+    glPreview.value.guests?.forEach((guest) => {
+      guest.errors = [];
+    });
+  }
+
   try {
     const guests = (glPreview.value.guests || []).map(g => ({
       name: (g.name || "").trim(),
       date_of_birth: (g.date_of_birth || "").trim(),
       city: (g.city || "").trim(),
       phone: (g.phone || "").trim(),
+      email: (g.email || "").trim(),
     })) as Guest[];
 
-    try {
-      let result;
+    const form = new FormData();
+    form.append("booking_id", String(booking.value.id));
+    form.append("guests", JSON.stringify(guests));
 
-      if (role === "admin") {
-        result = await gl.confirmAdmin(String(booking.value.id), guests);
+    const result = await useApi<GuestListNewConfirmResponse>("/guest-lists-new/confirm", {
+      method: "POST",
+      body: form,
+      headers: {},
+    });
+
+    if (result.errors && result.errors.length > 0) {
+      if (result.guests && result.guests.length > 0) {
+        glPreview.value = normalizePreviewData(result);
       }
       else {
-        if (!glPreview.value.preview_id) {
-          throw new Error("Preview ID не найден");
-        }
-        result = await gl.confirmExcel(glPreview.value.preview_id, String(booking.value.id), guests);
-      }
-
-      if (result.errors && result.errors.length > 0) {
         glError.value = result.errors.join(", ");
-        return;
-      }
-
-      glSuccess.value = role === "admin" ? "Список гостей обновлён администратором" : "Список гостей обновлён";
-      await gl.fetchByBooking(String(booking.value.id));
-
-      // Fetch the week containing the booking's date to update the booking status
-      if (booking.value?.date) {
-        const bookingDate = new Date(booking.value.date);
-        const weekStartDate = startOfWeek(bookingDate);
-        await s.setWeekStart(weekStartDate);
-      }
-      else {
-        await s.fetchWeek();
-      }
-
-      if (role === "admin") {
-        const existingList = gl.byBookingId[String(booking.value.id)]?.list;
-        if (existingList && existingList.guests) {
-          glPreview.value = normalizePreviewData({
-            booking_id: String(booking.value.id),
-            guests: existingList.guests.map(g => ({
-              id: g.id,
-              name: g.name,
-              date_of_birth: g.date_of_birth,
-              city: g.city,
-              phone: g.phone,
-              errors: [],
-            })),
-            errors: [],
-          });
-        }
-      }
-      else {
-        glPreview.value = null;
-        glFile.value = null;
-      }
-    }
-    catch (e: any) {
-      if (e?.response?.status === 400 && e?.data) {
-        if (e.data.preview_id) {
-          glPreview.value = normalizePreviewData(e.data);
-        }
-        else if (e.data.guests || e.data.errors) {
-          glPreview.value = normalizePreviewData(e.data);
-        }
-        glError.value = "Ошибки валидации. Пожалуйста, исправьте ошибки и попробуйте снова.";
-      }
-      else {
-        throw e;
-      }
-    }
-  }
-  catch (e: any) {
-    const errorMsg = e?.data?.detail || e?.data?.message || e?.message || "Не удалось подтвердить импорт";
-    glError.value = Array.isArray(errorMsg) ? errorMsg.join(", ") : errorMsg;
-  }
-  finally {
-    glPending.value = false;
-  }
-}
-
-async function onPreviewManual() {
-  if (!booking.value?.id) {
-    return;
-  }
-
-  glError.value = "";
-  glSuccess.value = "";
-  glPreview.value = null;
-
-  glPending.value = true;
-
-  try {
-    const guests = manualGuests.value.map(g => ({
-      name: (g.name || "").trim(),
-      date_of_birth: (g.date_of_birth || "").trim(),
-      city: (g.city || "").trim(),
-      phone: (g.phone || "").trim(),
-    })) as Guest[];
-
-    const result = await gl.previewManual(String(booking.value.id), guests);
-
-    if (result && (result.guests || result.errors)) {
-      glPreview.value = result;
-    }
-    else {
-      glError.value = "Не удалось создать предварительный просмотр";
-    }
-  }
-  catch (e: any) {
-    if (e?.response?.status === 400 && e?.data) {
-      if (e.data.guests || e.data.errors || e.data.preview_id) {
-        glPreview.value = normalizePreviewData(e.data);
-      }
-      const generalError = e.data.errors || e.data.detail;
-      if (generalError) {
-        glError.value = Array.isArray(generalError) ? generalError.join(", ") : generalError;
       }
       return;
     }
 
-    if (e?.response?.status === 422 && Array.isArray(e?.data?.detail)) {
-      const msgs = e.data.detail.map((d: any) => d?.msg || d?.message || JSON.stringify(d));
-      glError.value = msgs.join(", ");
+    glSuccess.value = role === "admin" ? "Список гостей обновлён администратором" : "Список гостей обновлён";
+    await gl.fetchByBooking(String(booking.value.id));
+    await s.fetchWeek();
+
+    if (role === "admin") {
+      const existingList = gl.byBookingId[String(booking.value.id)]?.list;
+      if (existingList && existingList.guests) {
+        glPreview.value = normalizePreviewData({
+          booking_id: String(booking.value.id),
+          guests: existingList.guests.map(g => ({
+            id: g.id,
+            name: g.name,
+            date_of_birth: g.date_of_birth,
+            city: g.city,
+            phone: g.phone,
+            email: g.email || "",
+            errors: [],
+          })),
+          errors: [],
+        });
+      }
     }
     else {
-      const errorMsg = e?.data?.detail || e?.data?.message || e?.message || "Не удалось создать предварительный просмотр";
+      glPreview.value = null;
+      glFile.value = null;
+    }
+  }
+  catch (e: unknown) {
+    const apiErr = asApiError(e);
+    const data = asApiErrorData(apiErr?.data);
+    if (apiErr?.response?.status === 400 && data) {
+      let normalized: GuestListPreviewPayload | null = null;
+      try {
+        normalized = normalizePreviewData(data);
+      }
+      catch {
+        normalized = null;
+      }
+
+      if (normalized) {
+        glPreview.value = normalized;
+      }
+      else {
+        const errorMsg = data.errors || data.detail || "Не удалось подтвердить импорт";
+        glPreview.value = {
+          booking_id: String(booking.value.id),
+          preview_id: typeof data.preview_id === "string" ? data.preview_id : undefined,
+          guests: [],
+          errors: Array.isArray(data.errors)
+            ? data.errors.map(e => String(e))
+            : [toErrorString(errorMsg, "Не удалось подтвердить импорт")],
+        };
+      }
+    }
+    else {
+      const errorMsg = extractErrorMessage(e, "Не удалось подтвердить импорт");
       glError.value = Array.isArray(errorMsg) ? errorMsg.join(", ") : errorMsg;
     }
   }
@@ -554,7 +621,7 @@ async function onPreviewManual() {
 }
 
 async function onDeleteGuestList() {
-  if (!booking.value?.id || glPending.value)
+  if (!booking.value?.id || glPending.value || isAdminPastReadOnly.value)
     return;
 
   // eslint-disable-next-line no-alert
@@ -566,24 +633,50 @@ async function onDeleteGuestList() {
   glSuccess.value = "";
 
   try {
-    const result = await gl.deleteAdminGuestList(String(booking.value.id));
-    glSuccess.value = result.detail || "Список гостей удалён";
+    await gl.deleteAdminGuestList(String(booking.value.id));
+    glSuccess.value = "Список гостей удалён";
     glPreview.value = null;
-
     gl.setListForBooking(String(booking.value.id), null);
 
-    // Fetch the week containing the booking's date to update the booking status
-    if (booking.value?.date) {
-      const bookingDate = new Date(booking.value.date);
-      const weekStartDate = startOfWeek(bookingDate);
-      await s.setWeekStart(weekStartDate);
-    }
-    else {
-      await s.fetchWeek();
+    await s.fetchWeek();
+  }
+  catch (e: unknown) {
+    const errorMsg = extractErrorMessage(e, "Не удалось удалить список гостей");
+    glError.value = Array.isArray(errorMsg) ? errorMsg.join(", ") : errorMsg;
+  }
+  finally {
+    glPending.value = false;
+  }
+}
+
+async function onDeleteGuest(guestId: string | number) {
+  if (!booking.value?.id || glPending.value || isAdminPastReadOnly.value)
+    return;
+
+  const guestIdStr = String(guestId);
+  console.warn("Deleting guest with ID:", guestIdStr);
+
+  // eslint-disable-next-line no-alert
+  if (!confirm("Вы уверены, что хотите удалить этого гостя? Это действие нельзя отменить."))
+    return;
+
+  glPending.value = true;
+  glError.value = "";
+  glSuccess.value = "";
+
+  try {
+    await gl.deleteAdminGuest(guestIdStr);
+    glSuccess.value = "Гость удалён";
+
+    await gl.fetchByBooking(String(booking.value.id));
+    await s.fetchWeek();
+
+    if (glPreview.value) {
+      glPreview.value.guests = glPreview.value.guests.filter(g => String(g.id) !== guestIdStr);
     }
   }
-  catch (e: any) {
-    const errorMsg = e?.data?.detail || e?.data?.message || e?.message || "Не удалось удалить список гостей";
+  catch (e: unknown) {
+    const errorMsg = extractErrorMessage(e, "Не удалось удалить гостя");
     glError.value = Array.isArray(errorMsg) ? errorMsg.join(", ") : errorMsg;
   }
   finally {
@@ -592,7 +685,7 @@ async function onDeleteGuestList() {
 }
 
 async function onDelete() {
-  if (pending.value)
+  if (pending.value || isAdminPastReadOnly.value)
     return;
 
   // eslint-disable-next-line no-alert
@@ -605,8 +698,8 @@ async function onDelete() {
       try {
         await gl.deleteAdminGuestList(String(booking.value.id));
       }
-      catch (e: any) {
-        const errorMsg = e?.data?.detail || e?.data?.message || e?.message || "Не удалось удалить список гостей";
+      catch (e: unknown) {
+        const errorMsg = extractErrorMessage(e, "Не удалось удалить список гостей");
         glError.value = Array.isArray(errorMsg) ? errorMsg.join(", ") : errorMsg;
         return;
       }
@@ -621,6 +714,15 @@ async function onDelete() {
   finally {
     pending.value = false;
   }
+}
+
+async function goBackToBookings() {
+  if (booking.value?.date) {
+    const bookingDate = new Date(booking.value.date);
+    const bookingWeekStart = startOfWeek(bookingDate);
+    await s.setWeekStart(bookingWeekStart);
+  }
+  await navigateTo("/bookings");
 }
 
 async function onChangeGuideSelect(index: number) {
@@ -653,23 +755,10 @@ async function onChangeGuideSelect(index: number) {
       await guides.assignGuide(String(booking.value.id), newId);
       guideAssignmentSuccess.value = "Гид добавлен";
     }
-    // Refresh guest list to get updated guide assignments
-    if (booking.value?.id && hasGuestList.value) {
-      await gl.fetchByBooking(booking.value.id);
-    }
-
-    // Fetch the week containing the booking's date to update the booking status
-    if (booking.value?.date) {
-      const bookingDate = new Date(booking.value.date);
-      const weekStartDate = startOfWeek(bookingDate);
-      await s.setWeekStart(weekStartDate);
-    }
-    else {
-      await s.fetchWeek();
-    }
+    await s.fetchWeek();
   }
-  catch (e: any) {
-    const errorMsg = e?.data?.detail || e?.data?.message || e?.message || "Не удалось изменить список гидов";
+  catch (e: unknown) {
+    const errorMsg = extractErrorMessage(e, "Не удалось изменить список гидов");
     guideAssignmentError.value = Array.isArray(errorMsg) ? errorMsg.join(", ") : errorMsg;
     initGuideSelects();
   }
@@ -696,17 +785,36 @@ async function onChangeGuideSelect(index: number) {
           <p class="text-surface-600 mt-2">
             ID: {{ bookingId }}
           </p>
-          <Tag
-            v-if="booking?.bookingType === 'immediate' || booking?.immediate"
-            severity="warning"
-            value="Залётные"
-            class="border-2 border-dashed border-amber-600 mt-1"
-          />
           <div class="mt-2 flex items-center gap-2 flex-wrap">
             <Tag
-              v-if="role === 'admin' && booking?.agentName"
+              v-if="role === 'admin' && booking.agentName"
               severity="info"
               :value="booking.agentName"
+            />
+            <Tag
+              v-if="booking.immediate"
+              severity="secondary"
+              value="Залётные"
+            />
+            <Tag
+              v-if="booking.joint"
+              severity="secondary"
+              value="Сборная"
+            />
+            <Tag
+              v-if="booking.isRadio"
+              severity="secondary"
+              value="Радиогиды"
+            />
+            <Tag
+              v-if="booking.curatorName"
+              severity="info"
+              :value="`Сопровождающий: ${booking.curatorName}`"
+            />
+            <Tag
+              v-if="booking.driverName"
+              severity="info"
+              :value="`Водитель: ${booking.driverName}`"
             />
           </div>
         </div>
@@ -717,7 +825,7 @@ async function onChangeGuideSelect(index: number) {
           severity="secondary"
           size="small"
           class="self-start sm:self-auto mt-2 sm:mt-0"
-          @click="navigateTo('/bookings')"
+          @click="goBackToBookings()"
         />
       </div>
     </div>
@@ -735,10 +843,11 @@ async function onChangeGuideSelect(index: number) {
                 v-model="formDate"
                 locale="ru"
                 model-type="yyyy-MM-dd"
+                format="dd.MM.yyyy"
                 :auto-apply="true"
                 :teleport="true"
                 :ui="{ input: 'p-inputtext w-full' }"
-                :disabled="(role !== 'admin') || pending"
+                :disabled="(role !== 'admin') || pending || isAdminPastReadOnly"
                 :enable-time-picker="false"
                 :close-on-auto-apply="true"
               />
@@ -759,7 +868,7 @@ async function onChangeGuideSelect(index: number) {
                 :auto-apply="true"
                 :teleport="true"
                 :ui="{ input: 'p-inputtext w-full' }"
-                :disabled="(role !== 'admin') || pending"
+                :disabled="(role !== 'admin') || pending || isAdminPastReadOnly"
                 :close-on-auto-apply="true"
               />
             </div>
@@ -774,8 +883,43 @@ async function onChangeGuideSelect(index: number) {
                 :max="maxLeft"
                 show-buttons
                 class="w-full"
-                :disabled="pending || (role === 'agency' && hasGuestList)"
+                :disabled="pending || isAdminPastReadOnly || (role === 'agency' && hasGuestList)"
               />
+            </div>
+          </div>
+
+          <div class="mt-4">
+            <div class="flex items-center gap-2 mb-4">
+              <Checkbox
+                v-model="formIsRadio"
+                input-id="is_radio"
+                :disabled="pending || isAdminPastReadOnly || (role === 'agency' && hasGuestList)"
+                :binary="true"
+              />
+              <label for="is_radio" class="text-sm font-medium text-surface-700 cursor-pointer">
+                Радиогиды
+              </label>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-medium text-surface-700">Имя сопровождающего</label>
+                <InputText
+                  v-model="formCuratorName"
+                  :disabled="pending || isAdminPastReadOnly || (role === 'agency' && hasGuestList)"
+                  placeholder="Необязательно"
+                  class="w-full"
+                />
+              </div>
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-medium text-surface-700">Имя водителя</label>
+                <InputText
+                  v-model="formDriverName"
+                  :disabled="pending || isAdminPastReadOnly || (role === 'agency' && hasGuestList)"
+                  placeholder="Необязательно"
+                  class="w-full"
+                />
+              </div>
             </div>
           </div>
 
@@ -807,7 +951,7 @@ async function onChangeGuideSelect(index: number) {
                 :auto-apply="true"
                 :teleport="true"
                 :ui="{ input: 'p-inputtext w-full' }"
-                :disabled="pending || (role === 'agency' && hasGuestList)"
+                :disabled="pending || isAdminPastReadOnly || (role === 'agency' && hasGuestList)"
                 :close-on-auto-apply="true"
               />
               <p class="text-xs text-surface-500 mt-1">
@@ -837,7 +981,7 @@ async function onChangeGuideSelect(index: number) {
               label="Сохранить изменения"
               icon="pi pi-save"
               :loading="pending"
-              :disabled="pending"
+              :disabled="pending || isAdminPastReadOnly"
               @click="onSave"
             />
           </div>
@@ -857,114 +1001,35 @@ async function onChangeGuideSelect(index: number) {
           <span class="text-xl font-semibold">Список гостей (Админ)</span>
         </template>
         <template #content>
-          <div v-if="glPreview" class="space-y-4">
-            <Message severity="info">
-              Редактирование списка гостей. После сохранения агентство получит уведомление на email.
-            </Message>
-
+          <div v-if="hasGuestList && (gl.byBookingId[String(booking.id)]?.list?.guests?.length || 0) > 0" class="space-y-4">
             <div class="flex gap-2 flex-wrap">
-              <Button
-                label="Сохранить изменения"
-                icon="pi pi-save"
-                severity="warning"
-                size="small"
-                :loading="glPending"
-                :disabled="glPending"
-                @click="onConfirmPreview"
-              />
               <Button
                 v-if="!booking?.immediate"
                 label="Удалить список гостей"
                 icon="pi pi-trash"
                 severity="danger"
                 size="small"
-                :disabled="glPending"
+                :disabled="glPending || isAdminPastReadOnly"
                 @click="onDeleteGuestList"
-              />
-              <Button
-                label="Отменить"
-                icon="pi pi-times"
-                text
-                severity="secondary"
-                size="small"
-                @click="glPreview = null"
               />
             </div>
 
             <div class="max-h-96 overflow-auto border rounded">
               <div class="p-3 bg-blue-50 border-b">
                 <div class="text-sm text-blue-800">
-                  <strong>Редактирование:</strong> Измените данные и нажмите "Сохранить изменения"
+                  <strong>Редактирование:</strong>
                 </div>
               </div>
-              <div class="space-y-2 p-3">
-                <div
-                  v-for="(g, i) in glPreview.guests"
-                  :key="i"
-                  class="border rounded p-3"
-                  :class="g.errors && g.errors.length > 0 ? 'border-red-300 bg-red-50' : 'border-gray-200'"
-                >
-                  <div class="flex items-center justify-between mb-2">
-                    <span class="font-medium text-sm">Гость #{{ i + 1 }}</span>
-                    <div v-if="g.errors && g.errors.length > 0" class="text-red-600 text-xs">
-                      {{ g.errors.length }} ошибок
-                    </div>
-                  </div>
-                  <div v-if="g.errors && g.errors.length > 0" class="mb-2">
-                    <div class="text-red-600 text-xs space-y-1">
-                      <div
-                        v-for="error in g.errors"
-                        :key="error"
-                        class="flex items-start"
-                      >
-                        <span class="mr-1">•</span>
-                        <span>{{ error }}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="grid grid-cols-1 gap-2">
-                    <div class="flex flex-col gap-1">
-                      <label class="text-xs text-surface-600">Имя</label>
-                      <InputText
-                        v-model="g.name"
-                        size="small"
-                        class="w-full"
-                        :class="g.errors && g.errors.some((e: string) => e.includes('имя')) ? 'p-invalid' : ''"
-                      />
-                    </div>
-                    <div class="flex flex-col gap-1">
-                      <label class="text-xs text-surface-600">Дата рождения (ДД.ММ.ГГГГ)</label>
-                      <InputText
-                        v-model="g.date_of_birth"
-                        size="small"
-                        class="w-full"
-                        :class="g.errors && g.errors.some((e: string) => e.includes('дата') || e.includes('возраст')) ? 'p-invalid' : ''"
-                        :disabled="glPending"
-                        @input="g.date_of_birth = formatDateInput(g.date_of_birth)"
-                      />
-                    </div>
-                    <div class="flex flex-col gap-1">
-                      <label class="text-xs text-surface-600">Город</label>
-                      <InputText
-                        v-model="g.city"
-                        size="small"
-                        class="w-full"
-                        :class="g.errors && g.errors.some((e: string) => e.includes('город')) ? 'p-invalid' : ''"
-                      />
-                    </div>
-                    <div class="flex flex-col gap-1">
-                      <label class="text-xs text-surface-600">Телефон</label>
-                      <InputText
-                        v-model="g.phone"
-                        size="small"
-                        class="w-full"
-                        :class="g.errors && g.errors.some((e: string) => e.includes('телефон')) ? 'p-invalid' : ''"
-                        :disabled="glPending"
-                        @input="g.phone = formatPhoneInput(g.phone)"
-                      />
-                    </div>
-                  </div>
-                </div>
+              <div class="p-3">
+                <BookingGuestPreviewTable
+                  :guests="gl.byBookingId[String(booking.id)]?.list?.guests || []"
+                  :disabled="glPending || isAdminPastReadOnly"
+                  :sheet-errors="sheetErrors"
+                  :show-age-column="true"
+                  :is-admin="role === 'admin'"
+                  @delete-guest="onDeleteGuest"
+                  @cell-edit-complete="onGuestCellEditComplete"
+                />
               </div>
             </div>
 
@@ -984,47 +1049,6 @@ async function onChangeGuideSelect(index: number) {
             </Message>
           </div>
 
-          <div v-else-if="hasGuestList" class="space-y-2">
-            <Message severity="info">
-              Список гостей существует. Вы можете его отредактировать или удалить.
-            </Message>
-            <div class="flex gap-2 flex-wrap">
-              <Button
-                label="Редактировать список"
-                icon="pi pi-pencil"
-                severity="warning"
-                size="small"
-                @click="() => {
-                  if (!booking) return;
-                  const existingList = gl.byBookingId[String(booking.id)]?.list;
-                  if (existingList && existingList.guests) {
-                    glPreview = {
-                      booking_id: String(booking.id),
-                      guests: existingList.guests.map(g => ({
-                        id: g.id,
-                        name: g.name,
-                        date_of_birth: g.date_of_birth,
-                        city: g.city,
-                        phone: g.phone,
-                        errors: [],
-                      })),
-                      errors: [],
-                    };
-                  }
-                }"
-              />
-              <Button
-                v-if="!booking?.immediate"
-                label="Удалить список гостей"
-                icon="pi pi-trash"
-                severity="danger"
-                size="small"
-                :disabled="glPending"
-                @click="onDeleteGuestList"
-              />
-            </div>
-          </div>
-
           <Message
             v-else
             severity="warn"
@@ -1040,49 +1064,36 @@ async function onChangeGuideSelect(index: number) {
         </template>
         <template #content>
           <template v-if="hasGuestList">
-            <div class="space-y-2">
-              <div class="max-h-64 overflow-auto">
-                <DataTable
-                  :value="manualGuests"
-                  :paginator="false"
-                  scrollable
-                  scroll-height="16rem"
-                >
-                  <Column header="#" :style="{ width: '3rem' }">
-                    <template #body="{ index }">
-                      {{ index + 1 }}
-                    </template>
-                  </Column>
-                  <Column field="name" header="Имя" />
-                  <Column field="date_of_birth" header="ДР" />
-                  <Column field="city" header="Город" />
-                  <Column field="phone" header="Телефон" />
-                </DataTable>
-              </div>
-            </div>
+            <BookingGuestPreviewTable
+              :guests="gl.byBookingId[String(booking.id)]?.list?.guests || []"
+              :disabled="true"
+              :show-age-column="true"
+              @delete-guest="onDeleteGuest"
+            />
           </template>
-
           <template v-else>
             <div class="space-y-4">
-              <div v-if="!hasGuestList && !glPreview" class="flex flex-col gap-2">
-                <label class="text-sm font-medium text-surface-700">Загрузка Excel</label>
+              <div v-if="!hasGuestList && (!glPreview || !glPreview.guests || glPreview.guests.length === 0)" class="flex flex-col gap-2">
+                <label class="text-sm font-medium text-surface-700">Загрузка файла</label>
                 <FileUpload
                   mode="basic"
-                  accept=".xlsx,.xls"
+                  accept=".xlsx,.xls,.txt"
                   :max-file-size="8388608"
                   choose-label="Выбрать файл"
                   class="w-full"
+                  :disabled="isAdminPastReadOnly"
                   @select="onFileChange"
                 />
               </div>
               <div v-if="glPreview" class="space-y-4">
                 <div class="flex gap-2 flex-wrap">
                   <Button
+                    v-if="glPreview.guests && glPreview.guests.length > 0"
                     label="Подтвердить импорт"
                     icon="pi pi-check"
                     severity="warning"
                     size="small"
-                    :disabled="glPending"
+                    :disabled="glPending || isAdminPastReadOnly"
                     @click="onConfirmPreview"
                   />
                   <Button
@@ -1096,7 +1107,7 @@ async function onChangeGuideSelect(index: number) {
                 </div>
                 <div v-if="glPreview" class="mt-3">
                   <div
-                    v-if="glPreview.errors && glPreview.errors.length > 0"
+                    v-if="globalErrors.length > 0"
                     class="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm"
                   >
                     <div class="font-semibold mb-1">
@@ -1104,164 +1115,38 @@ async function onChangeGuideSelect(index: number) {
                     </div>
                     <ul class="list-disc list-inside space-y-1">
                       <li
-                        v-for="error in glPreview.errors"
-                        :key="error"
+                        v-for="(error, index) in globalErrors"
+                        :key="index"
                       >
                         {{ error }}
                       </li>
                     </ul>
                   </div>
-                  <div class="max-h-64 overflow-auto border rounded">
-                    <div class="p-3 bg-blue-50 border-b">
-                      <div class="text-sm text-blue-800">
-                        <strong>Предварительный просмотр:</strong> Вы можете редактировать данные перед подтверждением
-                      </div>
-                    </div>
-                    <div class="space-y-2 p-3">
+                  <div v-if="glPreview.guests && glPreview.guests.length > 0" class="border rounded">
+                    <div
+                      class="p-3 border-b"
+                      :class="(glPreview.errors?.length > 0 || sheetErrors.length > 0) ? 'bg-red-50' : 'bg-blue-50'"
+                    >
                       <div
-                        v-for="(g, i) in glPreview.guests"
-                        :key="i"
-                        class="border rounded p-3"
-                        :class="g.errors && g.errors.length > 0 ? 'border-red-300 bg-red-50' : 'border-gray-200'"
+                        class="text-sm"
+                        :class="(glPreview.errors?.length > 0 || sheetErrors.length > 0) ? 'text-red-800' : 'text-blue-800'"
                       >
-                        <div class="flex items-center justify-between mb-2">
-                          <span class="font-medium text-sm">Гость #{{ i + 1 }}</span>
-                          <div v-if="g.errors && g.errors.length > 0" class="text-red-600 text-xs">
-                            {{ g.errors.length }} ошибок
-                          </div>
-                        </div>
-                        <div v-if="g.errors && g.errors.length > 0" class="mb-2">
-                          <div class="text-red-600 text-xs space-y-1">
-                            <div
-                              v-for="error in g.errors"
-                              :key="error"
-                              class="flex items-start"
-                            >
-                              <span class="mr-1">•</span>
-                              <span>{{ error }}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div class="grid grid-cols-1 gap-2">
-                          <div class="flex flex-col gap-1">
-                            <label class="text-xs text-surface-600">Имя</label>
-                            <InputText
-                              v-model="g.name"
-                              size="small"
-                              class="w-full"
-                              :class="g.errors && g.errors.some((e: string) => e.includes('имя')) ? 'p-invalid' : ''"
-                            />
-                          </div>
-                          <div class="flex flex-col gap-1">
-                            <label class="text-xs text-surface-600">Дата рождения (ДД.ММ.ГГГГ)</label>
-                            <InputText
-                              v-model="g.date_of_birth"
-                              size="small"
-                              class="w-full"
-                              :class="g.errors && g.errors.some((e: string) => e.includes('дата') || e.includes('возраст')) ? 'p-invalid' : ''"
-                              @input="g.date_of_birth = formatDateInput(g.date_of_birth)"
-                            />
-                          </div>
-                          <div class="flex flex-col gap-1">
-                            <label class="text-xs text-surface-600">Город</label>
-                            <InputText
-                              v-model="g.city"
-                              size="small"
-                              class="w-full"
-                              :class="g.errors && g.errors.some((e: string) => e.includes('город')) ? 'p-invalid' : ''"
-                            />
-                          </div>
-                          <div class="flex flex-col gap-1">
-                            <label class="text-xs text-surface-600">Телефон</label>
-                            <InputText
-                              v-model="g.phone"
-                              size="small"
-                              class="w-full"
-                              :class="g.errors && g.errors.some((e: string) => e.includes('телефон')) ? 'p-invalid' : ''"
-                              :disabled="glPending"
-                              @input="g.phone = formatPhoneInput(g.phone)"
-                            />
-                          </div>
+                        <strong>Предварительный просмотр:</strong> Вы можете редактировать данные перед подтверждением
+                        <div v-if="(glPreview.errors?.length > 0 || sheetErrors.length > 0)" class="mt-2 font-semibold">
+                          Пожалуйста, исправьте ошибки в данных
                         </div>
                       </div>
                     </div>
+                    <div class="p-3">
+                      <BookingGuestPreviewTable
+                        :guests="glPreview.guests"
+                        :disabled="glPending || isAdminPastReadOnly"
+                        :sheet-errors="sheetErrors"
+                        @delete-guest="onDeleteGuest"
+                        @cell-edit-complete="onPreviewTableCellEditComplete"
+                      />
+                    </div>
                   </div>
-                </div>
-              </div>
-              <div v-if="!glPreview" class="flex flex-col gap-3">
-                <div>
-                  <label class="text-sm font-medium text-surface-700 mb-2 block">Ручной ввод</label>
-                  <div class="text-sm text-surface-600 mb-2">
-                    Гостей: {{ filledManualGuests }} / {{ booking?.guests || 0 }} (заполнено)
-                    <Tag
-                      v-if="hasEnoughManualGuests"
-                      severity="success"
-                      value="✓ готово к предварительному просмотру"
-                      class="ml-2"
-                    />
-                    <Tag
-                      v-else
-                      severity="warning"
-                      value="(недостаточно заполненных записей)"
-                      class="ml-2"
-                    />
-                  </div>
-                </div>
-                <div class="space-y-2 max-h-56 overflow-auto pr-1">
-                  <div
-                    v-for="(g, i) in manualGuests"
-                    :key="i"
-                    class="grid grid-cols-5 gap-2"
-                  >
-                    <InputText
-                      v-model="g.name"
-                      size="small"
-                      placeholder="Имя"
-                    />
-                    <InputText
-                      v-model="g.date_of_birth"
-                      size="small"
-                      placeholder="ДД.ММ.ГГГГ"
-                      :disabled="glPending"
-                      @input="g.date_of_birth = formatDateInput(g.date_of_birth)"
-                    />
-                    <InputText
-                      v-model="g.city"
-                      size="small"
-                      placeholder="Город"
-                    />
-                    <InputText
-                      v-model="g.phone"
-                      size="small"
-                      placeholder="Телефон"
-                      :disabled="glPending"
-                      @input="g.phone = formatPhoneInput(g.phone)"
-                    />
-                    <Button
-                      icon="pi pi-trash"
-                      severity="danger"
-                      size="small"
-                      @click="manualGuests.splice(i, 1)"
-                    />
-                  </div>
-                </div>
-                <div class="flex gap-2 flex-wrap">
-                  <Button
-                    label="Добавить"
-                    icon="pi pi-plus"
-                    size="small"
-                    :disabled="manualGuests.length >= (booking?.guests || 0)"
-                    @click="manualGuests.push({ id: '', name: '', date_of_birth: '', city: '', phone: '+7' })"
-                  />
-                  <Button
-                    v-if="hasEnoughManualGuests"
-                    label="Предварительный просмотр"
-                    icon="pi pi-eye"
-                    severity="warning"
-                    size="small"
-                    :disabled="glPending"
-                    @click="onPreviewManual"
-                  />
                 </div>
               </div>
             </div>
@@ -1273,7 +1158,7 @@ async function onChangeGuideSelect(index: number) {
               {{ glSuccess }}
             </Message>
             <Message
-              v-else-if="glError"
+              v-else-if="glError && !glPreview"
               severity="error"
               class="mt-2"
             >
@@ -1386,7 +1271,7 @@ async function onChangeGuideSelect(index: number) {
             icon="pi pi-trash"
             severity="danger"
             :loading="pending"
-            :disabled="pending"
+            :disabled="pending || isAdminPastReadOnly"
             @click="onDelete"
           />
         </template>

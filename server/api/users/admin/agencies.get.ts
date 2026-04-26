@@ -1,10 +1,13 @@
 import { eq } from "drizzle-orm";
 
 import { schema, useDB } from "~/server/db";
-import { requireAdmin } from "~/server/utils/auth";
+import { requireAuth } from "~/server/utils/auth";
 
 export default defineEventHandler(async (event) => {
-  await requireAdmin(event);
+  const auth = await requireAuth(event);
+  if (auth.role !== "admin" && auth.role !== "vendor") {
+    throw createError({ statusCode: 403, message: "Только администратор или вендор может просматривать все агентства" });
+  }
 
   const db = useDB();
 

@@ -4,6 +4,13 @@ import { schema, useDB } from "~/server/db";
 import { requireAuth } from "~/server/utils/auth";
 import { getWeekDates } from "~/server/utils/date";
 
+function formatTime(t: unknown): string {
+  if (typeof t === "string")
+    return t.substring(0, 5);
+  const o = t as { hours?: number; minutes?: number } | null | undefined;
+  return `${String(o?.hours ?? 0).padStart(2, "0")}:${String(o?.minutes ?? 0).padStart(2, "0")}`;
+}
+
 function generateAllTimes(): string[] {
   const times: string[] = [];
   for (let h = 9; h < 20; h++) {
@@ -73,7 +80,7 @@ export default defineEventHandler(async (event) => {
   const agencyBookings = allBookingsRaw.filter(b => b.agencyId === auth.userId);
 
   const [users, guestLists, guideAssignments] = await Promise.all([
-    db.select({ id: schema.users.id, agencyName: schema.users.agencyName }).from(schema.users),
+    db.select({ id: schema.users.id, email: schema.users.email, agencyName: schema.users.agencyName }).from(schema.users),
     db.select().from(schema.guestLists),
     db.select().from(schema.guideAssignments),
   ]);
@@ -103,7 +110,7 @@ export default defineEventHandler(async (event) => {
     if (ts) {
       const day = dayMap.get(ts.dayId);
       if (day) {
-        const timeStr = typeof ts.time === "string" ? ts.time.substring(0, 5) : `${String(ts.time.hours || 0).padStart(2, "0")}:${String(ts.time.minutes || 0).padStart(2, "0")}`;
+        const timeStr = formatTime(ts.time);
         const key = `${day.date}|${timeStr}`;
         if (!agencyBookingsBySlot.has(key)) {
           agencyBookingsBySlot.set(key, []);
@@ -119,7 +126,7 @@ export default defineEventHandler(async (event) => {
     if (ts) {
       const day = dayMap.get(ts.dayId);
       if (day) {
-        const timeStr = typeof ts.time === "string" ? ts.time.substring(0, 5) : `${String(ts.time.hours || 0).padStart(2, "0")}:${String(ts.time.minutes || 0).padStart(2, "0")}`;
+        const timeStr = formatTime(ts.time);
         const key = `${day.date}|${timeStr}`;
         if (!allBookingsBySlot.has(key)) {
           allBookingsBySlot.set(key, []);
@@ -153,7 +160,6 @@ export default defineEventHandler(async (event) => {
 
       const limit = slot?.limit ?? dayLimit;
       const booked = allSlotBookings
-        .filter((b: any) => b.status !== "cancelled")
         .reduce((sum: number, b: any) => sum + b.peopleCount, 0);
 
       return {
@@ -176,10 +182,14 @@ export default defineEventHandler(async (event) => {
             id: String(b.id),
             people_count: b.peopleCount,
             agency_id: String(b.agencyId),
+            agency_email: agency?.email || "Unknown",
             agency_name: agency?.agencyName || "Unknown",
             status: bookingStatus,
             precise_time: b.preciseTime || b.time,
             booking_type: b.bookingType || "regular",
+            is_radio: !!b.isRadio,
+            curator_name: b.curatorName,
+            driver_name: b.driverName,
           };
         }),
       };

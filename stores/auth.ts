@@ -1,6 +1,11 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
+import { isTokenExpiringSoon } from "@/utils/jwt";
+
+export type UserRole = "admin" | "agency" | "vendor";
+type StoredUserRole = UserRole | null;
+
 type LoginResponse = {
   access_token: string;
   token_type: string;
@@ -8,12 +13,10 @@ type LoginResponse = {
   role: UserRole;
 };
 
-type UserRole = "admin" | "agent" | null;
-
 export const useAuthStore = defineStore("auth", () => {
   const token = useCookie<string | null>("access_token");
   const refreshToken = useCookie<string | null>("refresh_token");
-  const role = useCookie<UserRole>("user_role");
+  const role = useCookie<StoredUserRole>("user_role");
 
   const isAuthenticating = ref(false);
   const isRefreshing = ref(false);
@@ -23,6 +26,11 @@ export const useAuthStore = defineStore("auth", () => {
 
   const config = useRuntimeConfig();
   const base = config.public.apiBase;
+
+  function extractErrorMessage(err: unknown, fallback: string) {
+    const e = err as { data?: { detail?: string }; message?: string };
+    return e?.data?.detail || e?.message || fallback;
+  }
 
   async function login(username: string, password: string) {
     isAuthenticating.value = true;
@@ -45,10 +53,15 @@ export const useAuthStore = defineStore("auth", () => {
       token.value = data.access_token;
       refreshToken.value = data.refresh_token;
       role.value = data.role;
-      navigateTo("/");
+      if (data.role === "vendor") {
+        navigateTo("/bonus-points");
+      }
+      else {
+        navigateTo("/");
+      }
     }
-    catch (err: any) {
-      errorMessage.value = err.data?.detail || err.message || "Login failed";
+    catch (err: unknown) {
+      errorMessage.value = extractErrorMessage(err, "Login failed");
       throw err;
     }
     finally {
@@ -67,8 +80,8 @@ export const useAuthStore = defineStore("auth", () => {
         credentials: "include",
       });
     }
-    catch (err: any) {
-      errorMessage.value = err.message || "Register failed";
+    catch (err: unknown) {
+      errorMessage.value = extractErrorMessage(err, "Register failed");
       throw err;
     }
     finally {
@@ -77,12 +90,16 @@ export const useAuthStore = defineStore("auth", () => {
     }
   }
 
-  async function refreshTokenOnExpire() {
+  async function refreshTokenOnExpire(force: boolean = false) {
     if (isRefreshing.value) {
       while (isRefreshing.value) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       return !!token.value;
+    }
+
+    if (!force && token.value && !isTokenExpiringSoon(token.value, 60)) {
+      return true;
     }
 
     if (!refreshToken.value) {
@@ -108,12 +125,10 @@ export const useAuthStore = defineStore("auth", () => {
       refreshToken.value = data.refresh_token;
       role.value = data.role;
 
-      await new Promise(resolve => setTimeout(resolve, 10));
-
       return true;
     }
-    catch (err: any) {
-      errorMessage.value = err.data?.detail || err.message || "Token refresh failed";
+    catch (err: unknown) {
+      errorMessage.value = extractErrorMessage(err, "Token refresh failed");
       logout();
       return false;
     }
@@ -137,17 +152,55 @@ export const useAuthStore = defineStore("auth", () => {
     navigateTo("/login");
   }
 
+  async function checkSession() {
+    if (!token.value && refreshToken.value) {
+      return await refreshTokenOnExpire();
+    }
+    return isAuthenticated.value;
+  }
+
+  let refreshInterval: ReturnType<typeof setInterval>;
+
+  function startAutoRefresh() {
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+    }
+
+    const checkInterval = 5 * 60 * 1000; // 5 minutes
+
+    refreshInterval = setInterval(async () => {
+      if (token.value && isTokenExpiringSoon(token.value, 60)) {
+        try {
+          await refreshTokenOnExpire();
+        }
+        catch (error) {
+          console.error("Auto-refresh failed:", error);
+          logout();
+        }
+      }
+    }, checkInterval);
+  }
+
+  watch(token, (newToken) => {
+    if (newToken) {
+      startAutoRefresh();
+    }
+    else if (refreshInterval) {
+      clearInterval(refreshInterval);
+    }
+  }, { immediate: true });
+
   return {
     token,
     role,
     isAuthenticating,
+    isRefreshing,
     errorMessage,
-
     isAuthenticated,
-
     login,
     register,
     refreshToken: refreshTokenOnExpire,
     logout,
+    checkSession,
   };
 });

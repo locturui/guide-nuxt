@@ -21,7 +21,7 @@ function goBack() {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-surface-ground">
+  <div class="h-full flex items-center justify-center bg-surface-ground">
     <div class="text-center">
       <div class="mb-8">
         <h1 class="text-9xl font-bold text-primary">

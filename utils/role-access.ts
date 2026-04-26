@@ -1,4 +1,4 @@
-type UserRole = "admin" | "agent" | null;
+type UserRole = "admin" | "agency" | null;
 
 type RouteAccessMap = {
   [routeName: string]: UserRole[];
@@ -6,5 +6,5 @@ type RouteAccessMap = {
 
 export const routeAccess: RouteAccessMap = {
   login: [null],
-  bookings: ["admin", "agent"],
+  bookings: ["admin", "agency"],
 };

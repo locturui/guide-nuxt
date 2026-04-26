@@ -72,6 +72,7 @@ export default defineEventHandler(async (event) => {
         age: g.age,
         city: g.city,
         phone: g.phone,
+        email: g.email,
         created_at: g.createdAt.toISOString(),
         updated_at: g.updatedAt.toISOString(),
       })),

@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event);
-  const { guide_id, name, lastname } = body;
+  const { guide_id, name, lastname, bonus_points } = body;
 
   if (!guide_id || !lastname) {
     throw createError({
@@ -49,6 +49,9 @@ export default defineEventHandler(async (event) => {
   if (name !== undefined && name !== null) {
     updateData.name = name;
   }
+  if (typeof bonus_points === "number") {
+    updateData.bonusPoints = bonus_points;
+  }
 
   await db
     .update(schema.guides)
@@ -63,5 +66,7 @@ export default defineEventHandler(async (event) => {
     name: updatedGuide.name,
     lastname: updatedGuide.lastname,
     agency_id: updatedGuide.agencyId,
+    bonus_points: updatedGuide.bonusPoints ?? 0,
+    removed: updatedGuide.removed ?? false,
   };
 });

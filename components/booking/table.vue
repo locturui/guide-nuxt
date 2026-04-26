@@ -1,35 +1,16 @@
 <script setup lang="ts">
-import { useAuthStore } from "~/stores/auth";
-import { useGuestListsStore } from "~/stores/guest-lists";
-import { useScheduleStore } from "~/stores/schedule";
-import { formattedDate, startOfWeek } from "~/utils/date";
+import type { BookingDailyUploadDialog } from "#components";
 
-const role = useAuthStore().role as unknown as "admin" | "agency";
+import { formattedDate, startOfWeek } from "@/utils/date";
+
+const auth = useAuthStore();
+const role = (auth.role === "admin" ? "admin" : "agency") as "admin" | "agency";
 const s = useScheduleStore();
-const gl = useGuestListsStore();
 
 onMounted(async () => {
-  await s.setWeekStart(new Date());
-  const initialBookings = s.allBookings;
-  if (initialBookings.length) {
-    const bookingsWithGuestLists = initialBookings.filter(b => b.status === "filled" || b.status === "assigned");
-    if (bookingsWithGuestLists.length) {
-      await Promise.all(bookingsWithGuestLists.map(b => gl.fetchByBooking(b.id)));
-    }
+  if (s.timeSlots.length === 0) {
+    await s.setWeekStart(new Date());
   }
-  watch(
-    () => s.timeSlots,
-    async () => {
-      const bookings = s.allBookings;
-      if (bookings.length) {
-        const bookingsWithGuestLists = bookings.filter(b => b.status === "filled" || b.status === "assigned");
-        if (bookingsWithGuestLists.length) {
-          await Promise.all(bookingsWithGuestLists.map(b => gl.fetchByBooking(b.id)));
-        }
-      }
-    },
-    { deep: true },
-  );
 });
 
 const days = computed<Date[]>(() => {
@@ -125,6 +106,13 @@ function closeMulti(): void {
 
 const limitModal = ref<{ date: string; time: string; limit: number } | null>(null);
 
+const dailyUploadRef = ref<InstanceType<typeof BookingDailyUploadDialog> | null>(null);
+const dailyUploadError = ref<string | null>(null);
+
+function _handleDailyGlobalError(message: string) {
+  dailyUploadError.value = message;
+}
+
 watch([showBooking, showMulti, limitModal], () => {
   const weekHeader = document.querySelector("[data-week-header]");
   if (weekHeader) {
@@ -172,7 +160,8 @@ async function openCreate({ date, time }: { date: string; time: string }) {
   showBooking.value = true;
 }
 
-async function openEdit(b: { id: number; date: string; time: string; guests: number; agentId?: string | number }) {
+async function openEdit(payload: unknown) {
+  const b = payload as { id: number };
   await navigateTo(`/booking/${b.id}/edit`);
 }
 
@@ -189,6 +178,8 @@ const floatLeft = ref(0);
 const floatWidth = ref(0);
 const floatTranslateX = ref(0);
 const floatingRef = ref<HTMLElement | null>(null);
+let _resizeHandler: (() => void) | null = null;
+let _scrollContainer: Element | null = null;
 
 function onFloatingWheel(e: WheelEvent) {
   const el = scrollerRef.value;
@@ -270,12 +261,19 @@ onMounted(() => {
     recalculate();
   });
 
-  window.addEventListener("scroll", updateFloating, { passive: true });
-  window.addEventListener("resize", () => {
+  showFloating.value = false;
+  floatLeft.value = 0;
+  floatWidth.value = 0;
+  floatTranslateX.value = 0;
+
+  _scrollContainer = document.querySelector("main") ?? document.documentElement;
+  _scrollContainer.addEventListener("scroll", updateFloating, { passive: true });
+  _resizeHandler = () => {
     checkMobile();
     forceGridOnDesktop();
     recalculate();
-  });
+  };
+  window.addEventListener("resize", _resizeHandler);
 
   scrollerRef.value?.addEventListener("scroll", updateFloatingLayout, { passive: true });
 
@@ -319,8 +317,15 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener("scroll", updateFloating);
-  window.removeEventListener("resize", () => {});
+  showFloating.value = false;
+  floatLeft.value = 0;
+  floatWidth.value = 0;
+  _scrollContainer?.removeEventListener("scroll", updateFloating);
+  _scrollContainer = null;
+  if (_resizeHandler) {
+    window.removeEventListener("resize", _resizeHandler);
+    _resizeHandler = null;
+  }
   scrollerRef.value?.removeEventListener("scroll", updateFloatingLayout);
   document.removeEventListener("click", handleDayDropdownClickOutside);
 });
@@ -334,7 +339,7 @@ watch(viewMode, () => {
 
 <template>
   <div
-    class="w-full px-2 py-2 sm:px-4 sm:py-4 md:px-10 md:py-5 lg:px-15"
+    class="w-full px-2 py-2 sm:px-4 sm:py-4 md:px-10 md:py-5 lg:px-15 pb-28"
     :style="{ '--tg-sticky-top': `${stickyTop}px` }"
   >
     <div ref="headerRef">
@@ -370,7 +375,7 @@ watch(viewMode, () => {
             position: 'sticky',
             top: '0px',
             zIndex: 50,
-            background: 'white',
+            background: 'transparent',
           }"
         >
           <div />
@@ -397,7 +402,7 @@ watch(viewMode, () => {
                     <DayCategoryDropdown
                       :date-str="fmt(d)"
                       :model-value="dayDropdown"
-                      @confirm="p => confirmDay(fmt(d), p)"
+                      @confirm="(p: { category: string; limit?: number; }) => confirmDay(fmt(d), p)"
                       @cancel="dayDropdown = null"
                     />
                   </div>
@@ -409,8 +414,8 @@ watch(viewMode, () => {
 
         <div
           ref="scrollerRef"
-          class="w-full overflow-x-auto"
-          style="padding: 8px; margin: -8px;"
+          class="w-full overflow-x-auto overflow-y-visible"
+          style="padding: 8px;"
         >
           <TimeGrid
             v-if="!s.loading"
@@ -438,6 +443,47 @@ watch(viewMode, () => {
 
     <MultiEditBar @open="showMulti = true" />
 
+    <Card
+      v-if="role === 'agency' && !s.loading"
+      class="fixed bottom-4 right-4 z-50"
+    >
+      <template #content>
+        <div class="flex items-center gap-3">
+          <div class="flex justify-center items-center gap-2">
+            <Button
+              label="Единый список"
+              icon="pi pi-upload"
+              size="small"
+              severity="secondary"
+              @click="dailyUploadRef?.openFilePicker()"
+            />
+            <Button
+              icon="pi pi-info-circle"
+              icon-pos="right"
+              size="small"
+              severity="help"
+              text
+              @click="dailyUploadRef?.openHelp()"
+            />
+          </div>
+          <Message
+            v-if="dailyUploadError"
+            severity="error"
+            class="text-sm max-w-xs"
+            :closable="true"
+            @close="dailyUploadError = null"
+          >
+            {{ dailyUploadError }}
+          </Message>
+        </div>
+      </template>
+    </Card>
+
+    <BookingDailyUploadDialog
+      ref="dailyUploadRef"
+      :on-global-error="_handleDailyGlobalError"
+    />
+
     <BookingModal
       v-if="showBooking"
       :role="role"
@@ -464,11 +510,9 @@ watch(viewMode, () => {
       <div
         v-show="viewMode === 'grid' && showFloating && !isMobile"
         ref="floatingRef"
-        class="fixed z-[400] bg-white pt-2 pb-1 shadow-sm border-b border-gray-200"
-        :style="{ top: `0px`, left: `${floatLeft}px`, width: `${floatWidth}px` }"
-        @wheel.prevent="onFloatingWheel"
+        class="floating-day-header fixed z-[400] top-0 left-16 right-0 overflow-hidden pt-2 pb-8 pointer-events-none"
       >
-        <div class="px-4 sm:px-6 md:px-10 lg:px-15">
+        <div class="px-2 sm:px-4 md:px-10 lg:px-15 pointer-events-auto" @wheel.prevent="onFloatingWheel">
           <div
             class="grid w-full gap-0"
             style="grid-template-columns:32px repeat(7, minmax(120px, 1fr));"
@@ -493,7 +537,7 @@ watch(viewMode, () => {
                       <DayCategoryDropdown
                         :date-str="fmt(d)"
                         :model-value="dayDropdown"
-                        @confirm="p => confirmDay(fmt(d), p)"
+                        @confirm="(p: { category: string; limit?: number; }) => confirmDay(fmt(d), p)"
                         @cancel="dayDropdown = null"
                       />
                     </div>

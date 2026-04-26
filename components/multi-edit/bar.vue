@@ -1,7 +1,4 @@
 <script setup>
-import { useAuthStore } from "@/stores/auth";
-import { useScheduleStore } from "@/stores/schedule";
-
 const emit = defineEmits(["open"]);
 
 const s = useScheduleStore();

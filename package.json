@@ -41,6 +41,7 @@
     "vue": "^3.5.17",
     "vue-cal": "5.0.1-rc.25",
     "vue-router": "^4.5.1",
+    "vue-tsc": "3.2.7",
     "zod": "^3.25.7"
   },
   "devDependencies": {

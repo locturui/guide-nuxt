@@ -2,7 +2,7 @@
 import Datepicker from "@vuepic/vue-datepicker";
 import "@vuepic/vue-datepicker/dist/main.css";
 
-import { formatRangeTitle, startOfWeek } from "~/utils/date";
+import { formatRangeTitle, startOfWeek } from "@/utils/date";
 
 const props = defineProps({ weekStart: { type: Date, required: true } });
 const emit = defineEmits(["jump", "prev", "next"]);

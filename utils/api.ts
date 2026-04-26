@@ -1,11 +1,13 @@
 import { useAuthStore } from "@/stores/auth";
 
-export async function useApi<T>(url: string, options: any = {}): Promise<T> {
+type NuxtFetchOptions = Parameters<typeof $fetch<unknown>>[1];
+
+export async function useApi<T>(url: string, options: NuxtFetchOptions = {}): Promise<T> {
   const auth = useAuthStore();
   const config = useRuntimeConfig();
   const base = config.public.apiBase || (import.meta.env.PROD ? "/api" : "http://localhost:8000");
 
-  const headers = options.headers || {};
+  const headers: Record<string, string> = (options.headers as Record<string, string> | undefined) || {};
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   if (!isFormData) {
     headers["Content-Type"] = "application/json";
@@ -22,11 +24,12 @@ export async function useApi<T>(url: string, options: any = {}): Promise<T> {
       headers,
     });
   }
-  catch (err: any) {
-    if (err.response?.status === 401) {
+  catch (err: unknown) {
+    const e = err as { response?: { status?: number } };
+    if (e.response?.status === 401) {
       const refreshed = await auth.refreshToken();
       if (refreshed && auth.token) {
-        const newHeaders = { ...options.headers };
+        const newHeaders: Record<string, string> = { ...(options.headers as Record<string, string> | undefined) };
         if (!isFormData) {
           newHeaders["Content-Type"] = "application/json";
         }

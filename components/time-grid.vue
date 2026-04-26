@@ -9,13 +9,13 @@ defineProps<{
 const emit = defineEmits<{
   (e: "toggleDay", d: Date): void;
   (e: "selectSlot", payload: { date: string; time: string }): void;
-  (e: "selectBooking", payload: any): void;
+  (e: "selectBooking", payload: unknown): void;
 }>();
 </script>
 
 <template>
   <div
-    class="grid w-full gap-2"
+    class="grid w-full gap-2 overflow-visible"
     style="grid-template-columns:32px repeat(7, minmax(120px, 1fr));"
   >
     <template v-for="time in times" :key="time">

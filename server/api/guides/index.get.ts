@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { schema, useDB } from "~/server/db";
 import { requireAuth } from "~/server/utils/auth";
@@ -15,7 +15,11 @@ export default defineEventHandler(async (event) => {
 
   const db = useDB();
 
-  const guides = await db.select().from(schema.guides).where(eq(schema.guides.agencyId, auth.userId),
+  const guides = await db.select().from(schema.guides).where(
+    and(
+      eq(schema.guides.agencyId, auth.userId),
+      eq(schema.guides.removed, false),
+    ),
   );
 
   return {
@@ -24,6 +28,8 @@ export default defineEventHandler(async (event) => {
       name: g.name,
       lastname: g.lastname,
       agency_id: g.agencyId,
+      bonus_points: g.bonusPoints ?? 0,
+      removed: g.removed ?? false,
     })),
   };
 });

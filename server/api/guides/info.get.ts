@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   if (auth.role !== "agency") {
     throw createError({
       statusCode: 403,
-      message: "Only agencies can view guide info",
+      message: "Только агентства могут просматривать своих гидов",
     });
   }
 
@@ -47,5 +47,7 @@ export default defineEventHandler(async (event) => {
     name: guide.name,
     lastname: guide.lastname,
     agency_id: guide.agencyId,
+    bonus_points: guide.bonusPoints ?? 0,
+    removed: guide.removed ?? false,
   };
 });

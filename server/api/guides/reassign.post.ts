@@ -76,12 +76,13 @@ export default defineEventHandler(async (event) => {
       and(
         eq(schema.guides.id, new_guide_id),
         eq(schema.guides.agencyId, auth.userId),
+        eq(schema.guides.removed, false),
       ),
     ).limit(1);
   }
   else {
     [newGuide] = await db.select().from(schema.guides).where(
-      eq(schema.guides.id, new_guide_id),
+      and(eq(schema.guides.id, new_guide_id), eq(schema.guides.removed, false)),
     ).limit(1);
   }
 

@@ -62,7 +62,7 @@ export default defineEventHandler(async (event) => {
 
   const allAgencies = agencyIds.length > 0
     ? await Promise.all(agencyIds.map(id =>
-        db.select({ id: schema.users.id, agencyName: schema.users.agencyName }).from(schema.users).where(
+        db.select({ id: schema.users.id, email: schema.users.email, agencyName: schema.users.agencyName }).from(schema.users).where(
           eq(schema.users.id, id),
         ).limit(1),
       ))
@@ -76,14 +76,25 @@ export default defineEventHandler(async (event) => {
     }
   });
 
+  const bookingIds = bookings.map(b => b.id);
+  const guestLists = bookingIds.length > 0
+    ? await db.select().from(schema.guestLists)
+    : [];
+  const assignments = bookingIds.length > 0
+    ? await db.select().from(schema.guideAssignments)
+    : [];
+  const guestListByBookingId = new Map(guestLists.map((gl: any) => [gl.bookingId, gl]));
+  const assignmentCountByBookingId = new Map<string, number>();
+  assignments.forEach((a: any) => {
+    assignmentCountByBookingId.set(a.bookingId, (assignmentCountByBookingId.get(a.bookingId) || 0) + 1);
+  });
+
   const bookingsWithAgency = bookings.map(booking => ({
     ...booking,
     agency: agencyMap.get(booking.agencyId),
   }));
 
-  const booked = bookingsWithAgency
-    .filter((b: any) => b.status !== "cancelled")
-    .reduce((sum: number, b: any) => sum + b.peopleCount, 0);
+  const booked = bookingsWithAgency.reduce((sum: number, b: any) => sum + b.peopleCount, 0);
 
   const slotLimit = slotData.limit ?? day.limit;
 
@@ -91,16 +102,31 @@ export default defineEventHandler(async (event) => {
     date,
     time,
     limit: slotLimit,
+    limited: slotData.limited,
     remaining: Math.max(0, slotLimit - booked),
-    booked,
-    bookings: bookingsWithAgency.map((b: any) => ({
-      id: String(b.id),
-      people_count: b.peopleCount,
-      agency_id: String(b.agencyId),
-      agency_name: b.agency?.agencyName || "Unknown",
-      status: b.status,
-      precise_time: b.preciseTime,
-      booking_type: b.bookingType || "regular",
-    })),
+    total_booked: booked,
+    bookings: bookingsWithAgency.map((b: any) => {
+      const hasGuestList = guestListByBookingId.has(b.id);
+      const assignedCount = assignmentCountByBookingId.get(b.id) || 0;
+      const required = Math.max(1, Math.ceil(b.peopleCount / 17));
+      let status = "booked";
+      if (hasGuestList)
+        status = "filled";
+      if (assignedCount >= required)
+        status = "assigned";
+      return {
+        id: String(b.id),
+        people_count: b.peopleCount,
+        agency_id: String(b.agencyId),
+        agency_email: b.agency?.email || "Unknown",
+        agency_name: b.agency?.agencyName || "Unknown",
+        status,
+        precise_time: b.preciseTime,
+        booking_type: b.bookingType || "regular",
+        is_radio: b.isRadio,
+        curator_name: b.curatorName,
+        driver_name: b.driverName,
+      };
+    }),
   };
 });

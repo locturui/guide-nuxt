@@ -1,30 +1,14 @@
 import { defineStore } from "pinia";
 import { reactive } from "vue";
 
+import type {
+  GuestListByBookingResponse,
+  GuestListPreviewResponse,
+} from "@/types/api";
+import type { Guest, GuestList } from "@/types/domain";
+
 import { useScheduleStore } from "@/stores/schedule";
 import { useApi } from "@/utils/api";
-
-export type Guest = {
-  id?: string;
-  name: string;
-  date_of_birth: string;
-  age?: number;
-  city: string;
-  phone: string;
-  created_at?: string;
-  updated_at?: string;
-  errors?: string[];
-};
-
-export type GuestList = {
-  id: string;
-  booking_id: string;
-  source: string;
-  created_at: string;
-  updated_at: string;
-  guests: Guest[];
-  guide_ids?: string[];
-};
 
 type BookingGuestListState = {
   list: GuestList | null;
@@ -33,118 +17,62 @@ type BookingGuestListState = {
 };
 
 export const useGuestListsStore = defineStore("guestLists", () => {
-  const byBookingId = reactive<Record<string | number, BookingGuestListState>>({});
+  const byBookingId = reactive<Record<string, BookingGuestListState>>({});
 
-  function ensureState(bookingId: string | number): BookingGuestListState {
-    if (!byBookingId[bookingId]) {
-      byBookingId[bookingId] = { list: null, loading: false, error: null };
+  function extractErrorMessage(err: unknown, fallback: string) {
+    const e = err as { data?: { detail?: string; message?: string; errors?: string[] }; message?: string };
+
+    if (e?.data?.errors && Array.isArray(e.data.errors) && e.data.errors.length > 0) {
+      return e.data.errors.join(", ");
     }
-    return byBookingId[bookingId];
+    const msg = e?.data?.detail || e?.data?.message || e?.message;
+    return typeof msg === "string" ? msg : fallback;
   }
 
-  async function fetchByBooking(bookingId: string | number) {
+  function ensureState(bookingId: string | number): BookingGuestListState {
+    const key = String(bookingId);
+    if (!byBookingId[key]) {
+      byBookingId[key] = { list: null, loading: false, error: null };
+    }
+    return byBookingId[key];
+  }
+
+  async function fetchByBooking(bookingId: string | number): Promise<GuestList | null> {
     const st = ensureState(bookingId);
     st.loading = true;
     st.error = null;
     try {
-      const res = await useApi("/guest-lists/booking", {
+      const res = await useApi<GuestListByBookingResponse>("/guest-lists/booking", {
         method: "POST",
         body: { booking_id: String(bookingId) },
-      }) as { guest_list?: GuestList } | null;
-      if (res?.guest_list) {
-        st.list = res.guest_list;
-      }
-      else {
-        st.list = null;
-      }
+      });
+      st.list = res.guest_list;
+      return st.list;
     }
-    catch (e: any) {
-      const errorMsg = e?.data?.detail || e?.data?.message || e?.message || "Не удалось загрузить список гостей";
+    catch (err: unknown) {
+      const errorMsg = extractErrorMessage(err, "Не удалось загрузить список гостей");
       st.error = Array.isArray(errorMsg) ? errorMsg.join(", ") : errorMsg;
+      st.list = null;
+      return null;
     }
     finally {
       st.loading = false;
     }
   }
 
-  async function createList(booking_id: string, guests: Guest[]) {
-    return await useApi("/guest-lists/manual", {
-      method: "POST",
-      body: {
-        booking_id,
-        guests: guests.map(g => ({
-          name: g.name,
-          date_of_birth: g.date_of_birth,
-          city: g.city,
-          phone: g.phone,
-        })),
-      },
-    }) as { booking_id: string; preview_id: string; guests: Guest[]; errors: string[] };
-  }
-
-  async function updateList(guest_list_id: string, guests: Guest[], _booking_id?: string | number) {
-    return await useApi("/guest-lists/modify-list", {
-      method: "POST",
-      body: {
-        guest_list_id,
-        guests: guests.map(g => ({
-          guest_id: g.id,
-          name: g.name,
-          date_of_birth: g.date_of_birth,
-          city: g.city,
-          phone: g.phone,
-        })),
-      },
-    }) as { detail: string; guest_list: GuestList };
-  }
-
-  async function deleteList(guest_list_id: string) {
-    return await useApi("/guest-lists/delete-list", {
-      method: "POST",
-      body: { guest_list_id },
-    }) as { detail: string };
-  }
-
   async function previewExcel(booking_id: string | number, file: File) {
     const form = new FormData();
     form.append("booking_id", String(booking_id));
     form.append("file", file);
-    return await useApi("/guest-lists/preview", {
+    return await useApi<GuestListPreviewResponse>("/guest-lists-new/upload", {
       method: "POST",
       body: form,
       headers: {},
-    }) as {
-      booking_id: string;
-      preview_id?: string;
-      guests: Guest[];
-      errors: string[];
-      guest_list?: GuestList;
-    };
-  }
-
-  async function previewManual(booking_id: string | number, guests: Guest[]) {
-    return await useApi("/guest-lists/manual", {
-      method: "POST",
-      body: {
-        booking_id: String(booking_id),
-        guests: guests.map(g => ({
-          name: g.name,
-          date_of_birth: g.date_of_birth,
-          city: g.city,
-          phone: g.phone,
-        })),
-      },
-    }) as {
-      booking_id: string;
-      preview_id?: string;
-      guests: Guest[];
-      errors: string[];
-      guest_list?: GuestList;
-    };
+    });
   }
 
   async function confirmExcel(preview_id: string, booking_id: string | number, guests: Guest[]) {
-    return await useApi("/guest-lists/confirm", {
+    return await useApi<GuestListPreviewResponse>("/guest-lists-new/confirm", {
       method: "POST",
       body: {
         preview_id,
@@ -154,71 +82,17 @@ export const useGuestListsStore = defineStore("guestLists", () => {
           date_of_birth: g.date_of_birth,
           city: g.city,
           phone: g.phone,
+          email: g.email || "",
         })),
       },
-    }) as {
-      booking_id: string;
-      preview_id: string;
-      guests: Guest[];
-      errors: string[];
-      guest_list?: GuestList;
-    };
-  }
-
-  async function saveManualForBooking(booking_id: string | number, guests: Guest[]) {
-    return await useApi("/guest-lists/manual", {
-      method: "POST",
-      body: {
-        booking_id: String(booking_id),
-        guests: guests.map(g => ({
-          name: g.name,
-          date_of_birth: g.date_of_birth,
-          city: g.city,
-          phone: g.phone,
-        })),
-      },
-    }) as {
-      booking_id: string;
-      preview_id: string;
-      guests: Guest[];
-      errors: string[];
-      guest_list?: GuestList;
-    };
-  }
-
-  async function confirmAdmin(booking_id: string | number, guests: Guest[]) {
-    return await useApi("/guest-lists/admin/confirm", {
-      method: "POST",
-      body: {
-        booking_id: String(booking_id),
-        guests: guests.map(g => ({
-          name: g.name,
-          date_of_birth: g.date_of_birth,
-          city: g.city,
-          phone: g.phone,
-        })),
-      },
-    }) as {
-      booking_id: string;
-      preview_id?: string;
-      guests: Guest[];
-      errors: string[];
-      guest_list?: GuestList;
-    };
-  }
-
-  async function deleteAdminGuestList(booking_id: string | number) {
-    return await useApi(`/guest-lists/admin/booking/${booking_id}`, {
-      method: "DELETE",
-    }) as {
-      detail: string;
-    };
+    });
   }
 
   function hasGuestList(bookingId: string | number): boolean {
-    const list = byBookingId[bookingId]?.list;
-    if (list && Array.isArray(list.guests) && list.guests.length > 0) {
-      return true;
+    const state = byBookingId[String(bookingId)];
+
+    if (state !== undefined) {
+      return state.list != null && Array.isArray(state.list.guests) && state.list.guests.length > 0;
     }
 
     const scheduleStore = useScheduleStore();
@@ -235,19 +109,32 @@ export const useGuestListsStore = defineStore("guestLists", () => {
     st.list = list;
   }
 
+  async function deleteAdminGuestList(bookingId: string | number) {
+    const bookingIdStr = String(bookingId);
+    const state = byBookingId[bookingIdStr];
+    const guestListId = state?.list?.id;
+    if (!guestListId) {
+      throw new Error("Список гостей не найден для этого бронирования");
+    }
+    return await useApi(`/guest-lists-new/admin/guest-list?guest_list_id=${guestListId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async function deleteAdminGuest(guestId: string | number) {
+    return await useApi(`/guest-lists-new/admin/guests/${guestId}`, {
+      method: "DELETE",
+    });
+  }
+
   return {
     byBookingId,
     fetchByBooking,
-    createList,
-    updateList,
-    deleteList,
     previewExcel,
-    previewManual,
     confirmExcel,
-    confirmAdmin,
-    deleteAdminGuestList,
     hasGuestList,
     setListForBooking,
-    saveManualForBooking,
+    deleteAdminGuestList,
+    deleteAdminGuest,
   };
 });

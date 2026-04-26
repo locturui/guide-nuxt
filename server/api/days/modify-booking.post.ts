@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   const auth = await requireAuth(event);
 
   const body = await readBody(event);
-  const { booking_id, people_count, precise_time } = body;
+  const { booking_id, people_count, precise_time, is_radio, curator_name, driver_name } = body;
 
   if (!booking_id || !people_count) {
     throw createError({
@@ -64,7 +64,7 @@ export default defineEventHandler(async (event) => {
 
   const slotLimit = timeslot.limit ?? day.limit;
   const booked = otherBookings
-    .filter((b: any) => b.id !== booking.id && b.status !== "cancelled")
+    .filter((b: any) => b.id !== booking.id)
     .reduce((sum: number, b: any) => sum + b.peopleCount, 0);
 
   if (booked + people_count > slotLimit) {
@@ -75,13 +75,22 @@ export default defineEventHandler(async (event) => {
   }
 
   const newPreciseTime = precise_time || booking.preciseTime || timeslot.time;
+
+  const updateValues: any = {
+    peopleCount: people_count,
+    preciseTime: newPreciseTime,
+    updatedAt: new Date(),
+  };
+  if (is_radio !== undefined && is_radio !== null)
+    updateValues.isRadio = !!is_radio;
+  if (curator_name !== undefined)
+    updateValues.curatorName = curator_name;
+  if (driver_name !== undefined)
+    updateValues.driverName = driver_name;
+
   await db
     .update(schema.bookings)
-    .set({
-      peopleCount: people_count,
-      preciseTime: newPreciseTime,
-      updatedAt: new Date(),
-    })
+    .set(updateValues)
     .where(eq(schema.bookings.id, booking_id));
 
   const [updatedBooking] = await db.select().from(schema.bookings).where(
@@ -126,6 +135,8 @@ export default defineEventHandler(async (event) => {
     agency_id: String(updatedBooking.agencyId),
     timeslot_id: String(updatedBooking.timeslotId),
     precise_time: updatedBooking.preciseTime,
-    status: updatedBooking.status,
+    is_radio: updatedBooking.isRadio,
+    curator_name: updatedBooking.curatorName,
+    driver_name: updatedBooking.driverName,
   };
 });

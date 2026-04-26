@@ -1,10 +1,11 @@
 import { relations } from "drizzle-orm";
-import { boolean, date, integer, pgEnum, pgTable, text, time, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, integer, pgEnum, pgTable, text, time, timestamp, uuid } from "drizzle-orm/pg-core";
 
-export const userRoleEnum = pgEnum("user_role", ["admin", "agency"]);
+export const userRoleEnum = pgEnum("user_role", ["admin", "agency", "vendor"]);
 export const dayCategoryEnum = pgEnum("day_category", ["Open", "Closed", "Limited"]);
 export const bookingTypeEnum = pgEnum("booking_type", ["regular", "joint", "immediate"]);
 export const guestListSourceEnum = pgEnum("guest_list_source", ["manual", "excel_import"]);
+export const serviceAccountTypeEnum = pgEnum("service_account_type", ["CP-1", "CP-2", "Admin"]);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -12,6 +13,8 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   role: userRoleEnum("role").notNull(),
   agencyName: text("agency_name"),
+  telegramId: bigint("telegram_id", { mode: "number" }).unique(),
+  telegramUsername: text("telegram_username"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -47,7 +50,9 @@ export const bookings = pgTable("bookings", {
   peopleCount: integer("people_count").notNull(),
   preciseTime: time("precise_time"),
   bookingType: bookingTypeEnum("booking_type").default("regular").notNull(),
-  status: text("status").default("booked").notNull(),
+  isRadio: boolean("is_radio").default(false).notNull(),
+  curatorName: text("curator_name"),
+  driverName: text("driver_name"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -57,6 +62,8 @@ export const guides = pgTable("guides", {
   agencyId: uuid("agency_id").references(() => users.id).notNull(),
   name: text("name").notNull(),
   lastname: text("lastname").notNull(),
+  bonusPoints: integer("bonus_points").default(0).notNull(),
+  removed: boolean("removed").default(false).notNull(),
 });
 
 export const guideAssignments = pgTable("guide_assignments", {
@@ -82,8 +89,26 @@ export const guests = pgTable("guests", {
   age: integer("age").notNull(),
   city: text("city").notNull(),
   phone: text("phone").notNull(),
+  email: text("email"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const telegramLinkTokens = pgTable("telegram_link_tokens", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  used: boolean("used").default(false).notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const serviceAccounts = pgTable("service_accounts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  type: serviceAccountTypeEnum("type").notNull(),
+  telegramId: bigint("telegram_id", { mode: "number" }),
+  email: text("email"),
 });
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -155,5 +180,12 @@ export const guestsRelations = relations(guests, ({ one }) => ({
   guestList: one(guestLists, {
     fields: [guests.guestListId],
     references: [guestLists.id],
+  }),
+}));
+
+export const telegramLinkTokensRelations = relations(telegramLinkTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [telegramLinkTokens.userId],
+    references: [users.id],
   }),
 }));

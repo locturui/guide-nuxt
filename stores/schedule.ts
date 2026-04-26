@@ -1,8 +1,39 @@
 import { formattedDate, startOfWeek } from "@/utils/date";
 
-export type BookingDTO = { id: number; people_count: number; agency_id?: number; agency_name?: string; status?: string; precise_time?: string; immediate?: boolean };
-export type SlotDTO = { time: string; limit: number; remaining: number; bookings?: BookingDTO[] };
-export type DayDTO = { date: string; timeslots: SlotDTO[] };
+export type BookingStatus = "booked" | "filled" | "assigned";
+
+export type BookingType = "regular" | "joint" | "immediate";
+
+export type BookingDTO = {
+  id: string | number;
+  people_count: number;
+  agency_id?: number;
+  agency_name?: string;
+  status: BookingStatus;
+  precise_time?: string;
+  booking_type?: BookingType;
+  immediate?: boolean;
+  joint?: boolean;
+  is_joint?: boolean;
+  is_radio?: boolean;
+  curator_name?: string;
+  driver_name?: string;
+};
+
+export type SlotDTO = {
+  time: string;
+  limit: number;
+  remaining: number;
+  limited?: boolean;
+  bookings?: BookingDTO[];
+};
+
+export type DayDTO = {
+  date: string;
+  category?: string;
+  limit?: number;
+  timeslots: SlotDTO[];
+};
 
 export const useScheduleStore = defineStore("schedule", () => {
   const weekStart = ref(startOfWeek(new Date()));
@@ -12,6 +43,27 @@ export const useScheduleStore = defineStore("schedule", () => {
   const selectMode = ref(false);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  const targetDate = ref<string | null>(null);
+
+  function extractErrorMessage(err: unknown, fallback: string) {
+    const e = err as { data?: { detail?: string }; message?: string };
+    return e?.data?.detail || e?.message || fallback;
+  }
+
+  async function downloadDaySummary(dateStr: string): Promise<Blob> {
+    return await useApi<Blob>("/days/summary", {
+      method: "POST",
+      body: { date: dateStr },
+      responseType: "blob",
+    });
+  }
+
+  async function fetchBookingInfo(bookingId: string): Promise<{ date: string; time: string }> {
+    return await useApi<{ date: string; time: string }>("/days/get-booking-info", {
+      method: "POST",
+      body: { booking_id: bookingId },
+    });
+  }
 
   const slotMap = computed(() => {
     const map: Record<string, Record<string, SlotDTO>> = {};
@@ -42,11 +94,15 @@ export const useScheduleStore = defineStore("schedule", () => {
           agentName: b.agency_name,
           status: b.status,
           preciseTime: b.precise_time,
-          bookingType: (b as any).booking_type || "regular",
-          immediate: (b as any).booking_type === "immediate",
+          immediate: Boolean(b.immediate) || b.booking_type === "immediate",
+          joint: b.booking_type === "joint" || Boolean(b.joint) || Boolean(b.is_joint),
+          isRadio: Boolean(b.is_radio),
+          curatorName: b.curator_name,
+          driverName: b.driver_name,
         })),
       ),
-    ));
+    ),
+  );
 
   const selectedPairs = computed(() =>
     Object.entries(selectedSlots)
@@ -72,13 +128,13 @@ export const useScheduleStore = defineStore("schedule", () => {
     const dateStr = formattedDate(weekStart.value);
     try {
       const role = useAuthStore().role;
-      const res = await useApi(role === "admin"
+      const res = await useApi<DayDTO[]>(role === "admin"
         ? `/week/admin?date=${dateStr}`
         : `/week/agency?date=${dateStr}`);
-      timeSlots.value = res as DayDTO[];
+      timeSlots.value = res;
     }
-    catch (e: any) {
-      error.value = e?.message || "Failed to fetch week";
+    catch (err: unknown) {
+      error.value = extractErrorMessage(err, "Failed to fetch week");
     }
     finally {
       loading.value = false;
@@ -91,9 +147,9 @@ export const useScheduleStore = defineStore("schedule", () => {
     if (inWeek || extraSlotData[key])
       return;
     try {
-      const res = await useApi("/days/get-slot-data", { method: "POST", body: { date, time } });
-      const limit = Number((res as any)?.limit ?? 0);
-      const remaining = Number((res as any)?.remaining ?? Math.max(0, limit - Number((res as any)?.booked ?? (res as any)?.bookings_count ?? 0)));
+      const res = await useApi<{ limit?: number; remaining?: number; booked?: number; bookings_count?: number }>("/days/get-slot-data", { method: "POST", body: { date, time } });
+      const limit = Number(res?.limit ?? 0);
+      const remaining = Number(res?.remaining ?? Math.max(0, limit - Number(res?.booked ?? res?.bookings_count ?? 0)));
       extraSlotData[key] = { limit, remaining };
     }
     catch {
@@ -137,25 +193,57 @@ export const useScheduleStore = defineStore("schedule", () => {
     await fetchWeek();
   }
 
-  async function book(date: string, time: string, people: number) {
-    await useApi("/days/book", { method: "POST", body: { date, time, people_count: people } });
+  async function book(date: string, time: string, people: number, isJoint: boolean = false, isRadio: boolean = false, curatorName?: string, driverName?: string) {
+    const body: Record<string, unknown> = { date, time, people_count: people, is_joint: isJoint, is_radio: isRadio };
+    if (curatorName !== undefined) {
+      body.curator_name = curatorName;
+    }
+    if (driverName !== undefined) {
+      body.driver_name = driverName;
+    }
+    await useApi("/days/book", { method: "POST", body });
+    const bookingDate = new Date(date);
+    const bookingWeekStart = startOfWeek(bookingDate);
+
+    weekStart.value = bookingWeekStart;
+    targetDate.value = date;
     await fetchWeek();
   }
 
-  async function modifyBooking(bookingId: string, people: number, preciseTime?: string) {
-    const response = await useApi("/days/modify-booking", { method: "POST", body: { booking_id: bookingId, people_count: people, precise_time: preciseTime } });
+  async function modifyBooking(bookingId: string, people: number, preciseTime?: string, isRadio?: boolean, curatorName?: string, driverName?: string) {
+    const body: Record<string, unknown> = { booking_id: bookingId, people_count: people, precise_time: preciseTime };
+    if (isRadio !== undefined) {
+      body.is_radio = isRadio;
+    }
+    if (curatorName !== undefined) {
+      body.curator_name = curatorName;
+    }
+    if (driverName !== undefined) {
+      body.driver_name = driverName;
+    }
+    const response = await useApi("/days/modify-booking", { method: "POST", body });
     await fetchWeek();
     return response;
   }
 
-  async function adminModifyBooking(payload: { bookingId: string; date: string; time: string; people: number; preciseTime?: string }) {
-    const response = await useApi("/days/admin/modify-booking", { method: "POST", body: {
+  async function adminModifyBooking(payload: { bookingId: string; date: string; time: string; people: number; preciseTime?: string; isRadio?: boolean; curatorName?: string; driverName?: string }) {
+    const body: Record<string, unknown> = {
       booking_id: payload.bookingId,
       date: payload.date,
       time: payload.time,
       people_count: payload.people,
       precise_time: payload.preciseTime,
-    } });
+    };
+    if (payload.isRadio !== undefined) {
+      body.is_radio = payload.isRadio;
+    }
+    if (payload.curatorName !== undefined) {
+      body.curator_name = payload.curatorName;
+    }
+    if (payload.driverName !== undefined) {
+      body.driver_name = payload.driverName;
+    }
+    const response = await useApi("/days/admin/modify-booking", { method: "POST", body });
     await fetchWeek();
     return response;
   }
@@ -178,6 +266,7 @@ export const useScheduleStore = defineStore("schedule", () => {
     selectMode,
     loading,
     error,
+    targetDate,
     slotMap,
     allTimes,
     allBookings,
@@ -186,6 +275,8 @@ export const useScheduleStore = defineStore("schedule", () => {
     setWeekStart,
     fetchWeek,
     fetchSlotData,
+    downloadDaySummary,
+    fetchBookingInfo,
     toggleSelect,
     clearSelection,
     setSelectMode,

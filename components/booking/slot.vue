@@ -1,6 +1,4 @@
 <script setup>
-import { useGuestListsStore } from "@/stores/guest-lists";
-
 const props = defineProps({
   start: Date,
   end: Date,
@@ -12,44 +10,24 @@ const props = defineProps({
 });
 
 const emits = defineEmits(["selectSlot", "selectBooking"]);
-const gl = useGuestListsStore();
 const isHovered = ref(false);
 
 const bookingsWithStatus = computed(() => {
   return (props.bookings || []).map((b) => {
-    const hasGuestList = gl.hasGuestList && gl.hasGuestList(b.id);
-    const guestList = hasGuestList ? gl.byBookingId[String(b.id)]?.list : null;
-    const hasGuides = guestList && Array.isArray(guestList.guide_ids) && guestList.guide_ids.length > 0;
     return {
       ...b,
-      hasGuestList,
-      hasGuides,
-      severity: getBookingBadgeSeverity({
-        ...b,
-        hasGuestList,
-        hasGuides,
-      }),
+      severity: getBookingBadgeSeverity(b),
     };
   });
 });
 
 function getBookingBadgeSeverity(booking) {
   const status = booking.status;
-  const hasGuestList = booking.hasGuestList;
-  const hasGuides = booking.hasGuides;
 
-  if (status === "filled") {
-    return "warning";
-  }
-  if (status === "assigned") {
-    if (hasGuestList && !hasGuides) {
-      return "warning";
-    }
+  if (status === "assigned")
     return "success";
-  }
-  if (hasGuestList) {
+  if (status === "filled")
     return "warning";
-  }
   return "info";
 }
 
@@ -141,8 +119,8 @@ const onlyImmediateAllowed = computed(() => isImmediateOnly());
       left <= 0 || isDisabled
         ? 'bg-gray-200 text-gray-500 border border-gray-300 opacity-60 cursor-not-allowed'
         : onlyImmediateAllowed && !isDisabled
-          ? 'border-amber-500 border-2 border-dashed bg-amber-50 text-amber-800 hover:bg-amber-100 hover:shadow-md hover:scale-105 hover:z-50'
-          : 'bg-white hover:bg-gray-50 hover:shadow-md hover:scale-105 hover:z-50 text-gray-700 border border-gray-100',
+          ? 'border-amber-500 border-2 border-dashed bg-amber-50 text-amber-800 hover:bg-amber-100 hover:shadow-md hover:scale-105 hover:z-10'
+          : 'bg-white hover:bg-gray-50 hover:shadow-md hover:scale-105 hover:z-10 text-gray-700 border border-gray-100',
       selectMode && (selected || isHovered) ? 'border-green-600 border-2' : '',
     ]"
     @click="() => {
@@ -153,18 +131,13 @@ const onlyImmediateAllowed = computed(() => isImmediateOnly());
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
   >
-    <div
-      v-if="selectMode && (selected || isHovered)"
-      class="absolute inset-0 bg-green-500/20 rounded-lg pointer-events-none z-0"
-    />
     <div class="relative z-10 flex flex-col flex-1 min-h-0 overflow-visible">
       <div class="text-xs sm:text-sm font-medium">
         {{ left }}/{{ limit }} свободно
       </div>
       <div
         v-if="bookings.length"
-        class="flex flex-wrap gap-1 overflow-y-auto mt-1 mb-1 pr-1 relative flex-1 min-h-0 items-start content-start"
-        style="padding: 4px; margin: -4px; clip-path: none;"
+        class="flex flex-wrap gap-1 overflow-y-auto overflow-x-visible mt-1 mb-1 px-1 pt-1 pb-0 relative flex-1 min-h-0 items-start content-start"
       >
         <Tag
           v-for="b in bookingsWithStatus"
@@ -172,24 +145,39 @@ const onlyImmediateAllowed = computed(() => isImmediateOnly());
           :value="`${b.agentName} - ${b.guests}`"
           :severity="b.severity"
           :data-severity="b.severity"
-          class="cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:shadow-md relative z-50 text-[10px] sm:text-xs flex-shrink-0"
+          class="relative text-[10px] sm:text-xs flex-shrink-0 z-20"
+          style="transform-origin: center;"
           :class="[
+            selectMode ? 'cursor-default' : 'cursor-pointer',
+            selectMode ? '' : 'transition-transform duration-200 ease-in-out hover:scale-105 hover:shadow-md',
             b.immediate ? 'border-2 border-dashed border-amber-600' : '',
+            b.joint ? 'border-2 border-dotted border-purple-500' : '',
+            b.isRadio ? 'border-2 border-solid border-blue-500' : '',
             `booking-badge-${b.severity}`,
           ]"
-          @click.stop="onSelectBooking({
+          @click="selectMode ? undefined : ($event.stopPropagation(), onSelectBooking({
             id: b.id,
             agentId: b.agentId,
             agentName: b.agentName,
             guests: b.guests,
             date: props.start.toISOString().split('T')[0],
             time: formatTime(props.start),
-          })"
+          }))"
         />
       </div>
       <div class="text-[10px] sm:text-xs text-gray-600 mt-auto">
         {{ formatTime(start) }} - {{ formatTime(end) }}
       </div>
     </div>
+    <div
+      v-if="selectMode && (selected || isHovered)"
+      class="absolute inset-0 bg-green-500/20 rounded-lg pointer-events-none z-20"
+    />
   </div>
 </template>
+
+<style scoped>
+:deep(.p-tag) {
+  overflow: visible !important;
+}
+</style>

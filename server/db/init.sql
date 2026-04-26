@@ -10,6 +10,8 @@ DROP TABLE IF EXISTS bookings CASCADE;
 DROP TABLE IF EXISTS timeslots CASCADE;
 DROP TABLE IF EXISTS days CASCADE;
 DROP TABLE IF EXISTS refresh_tokens CASCADE;
+DROP TABLE IF EXISTS telegram_link_tokens CASCADE;
+DROP TABLE IF EXISTS service_accounts CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
 -- Drop enums if they exist
@@ -17,20 +19,24 @@ DROP TYPE IF EXISTS user_role CASCADE;
 DROP TYPE IF EXISTS day_category CASCADE;
 DROP TYPE IF EXISTS booking_type CASCADE;
 DROP TYPE IF EXISTS guest_list_source CASCADE;
+DROP TYPE IF EXISTS service_account_type CASCADE;
 
 -- Create enums
-CREATE TYPE user_role AS ENUM ('admin', 'agency');
+CREATE TYPE user_role AS ENUM ('admin', 'agency', 'vendor');
 CREATE TYPE day_category AS ENUM ('Open', 'Closed', 'Limited');
 CREATE TYPE booking_type AS ENUM ('regular', 'joint', 'immediate');
 CREATE TYPE guest_list_source AS ENUM ('manual', 'excel_import');
+CREATE TYPE service_account_type AS ENUM ('CP-1', 'CP-2', 'Admin');
 
--- Users table (agencies and admins)
+-- Users table (agencies, admins, vendors)
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT NOT NULL UNIQUE,
   password TEXT NOT NULL,
   role user_role NOT NULL,
   agency_name TEXT,
+  telegram_id BIGINT UNIQUE,
+  telegram_username TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -75,7 +81,9 @@ CREATE TABLE bookings (
   people_count INTEGER NOT NULL,
   precise_time TIME,
   booking_type booking_type DEFAULT 'regular' NOT NULL,
-  status TEXT NOT NULL DEFAULT 'booked' CHECK (status IN ('booked', 'filled', 'assigned', 'cancelled')),
+  is_radio BOOLEAN NOT NULL DEFAULT FALSE,
+  curator_name TEXT,
+  driver_name TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -86,6 +94,8 @@ CREATE TABLE guides (
   agency_id UUID NOT NULL REFERENCES users(id),
   name TEXT NOT NULL,
   lastname TEXT NOT NULL,
+  bonus_points INTEGER NOT NULL DEFAULT 0,
+  removed BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -116,8 +126,28 @@ CREATE TABLE guests (
   age INTEGER,
   city TEXT NOT NULL,
   phone TEXT NOT NULL,
+  email TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Telegram link tokens
+CREATE TABLE telegram_link_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMP NOT NULL,
+  used BOOLEAN NOT NULL DEFAULT FALSE,
+  used_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Service accounts (CP-1, CP-2, Admin notification routing)
+CREATE TABLE service_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type service_account_type NOT NULL,
+  telegram_id BIGINT,
+  email TEXT
 );
 
 -- Create indexes for better performance

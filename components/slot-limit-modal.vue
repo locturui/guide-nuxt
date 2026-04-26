@@ -2,8 +2,7 @@
 import Datepicker from "@vuepic/vue-datepicker";
 import "@vuepic/vue-datepicker/dist/main.css";
 
-import { useScheduleStore } from "@/stores/schedule";
-import { isHalfHour, roundToHalfHour } from "~/utils/time";
+import { isHalfHour, roundToHalfHour } from "@/utils/time";
 
 const props = defineProps<{ date: string; time: string; initialLimit?: number }>();
 const emit = defineEmits(["close"]);
@@ -30,6 +29,8 @@ watch(formTime, (v) => {
     formTime.value = roundToHalfHour(v);
 });
 
+const backdropMousedown = ref(false);
+
 async function save() {
   if (pending.value)
     return;
@@ -45,7 +46,11 @@ async function save() {
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4" @click="$emit('close')">
+  <div
+    class="fixed inset-0 bg-black/50 flex items-center justify-center z-[600] p-4"
+    @mousedown="backdropMousedown = ($event.target === $event.currentTarget)"
+    @click.self="backdropMousedown && $emit('close')"
+  >
     <Card
       class="w-full max-w-sm"
       @click.stop
@@ -72,6 +77,7 @@ async function save() {
               v-model="formDate"
               locale="ru"
               model-type="yyyy-MM-dd"
+              format="dd.MM.yyyy"
               :enable-time-picker="false"
               :auto-apply="true"
               :teleport="true"

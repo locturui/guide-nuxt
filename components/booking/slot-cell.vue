@@ -1,5 +1,4 @@
 <script setup>
-import { useScheduleStore } from "@/stores/schedule";
 import { formattedDate, parseSlotDate } from "@/utils/date";
 
 const props = defineProps({
@@ -27,7 +26,9 @@ const bookings = computed(() =>
     date: dateStr.value,
     time: props.time,
     status: b.status,
-    immediate: b.booking_type === "immediate",
+    immediate: b.immediate || b.booking_type === "immediate",
+    joint: b.booking_type === "joint" || b.joint,
+    isRadio: b.is_radio || false,
   })),
 );
 
@@ -44,15 +45,17 @@ function handleSlotClick() {
 </script>
 
 <template>
-  <BookingSlot
-    :start="start"
-    :end="end"
-    :left="left"
-    :limit="limit"
-    :bookings="bookings"
-    :selected="selected"
-    :select-mode="role === 'admin' && s.selectMode"
-    @select-slot="handleSlotClick"
-    @select-booking="(b) => emit('selectBooking', b)"
-  />
+  <div class="overflow-visible">
+    <BookingSlot
+      :start="start"
+      :end="end"
+      :left="left"
+      :limit="limit"
+      :bookings="bookings"
+      :selected="selected"
+      :select-mode="role === 'admin' && s.selectMode"
+      @select-slot="handleSlotClick"
+      @select-booking="(b) => emit('selectBooking', b)"
+    />
+  </div>
 </template>

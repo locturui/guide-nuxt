@@ -2,9 +2,7 @@
 import Datepicker from "@vuepic/vue-datepicker";
 import "@vuepic/vue-datepicker/dist/main.css";
 
-import { useGuestListsStore } from "@/stores/guest-lists";
-import { useScheduleStore } from "@/stores/schedule";
-import { isHalfHour, roundToHalfHour } from "~/utils/time";
+import { isHalfHour, roundToHalfHour } from "@/utils/time";
 
 const props = defineProps<{
   role: "admin" | "agency";
@@ -44,6 +42,10 @@ onUnmounted(() => {
 const formDate = ref<string>(props.booking?.date ?? props.initialDate ?? "");
 const formTime = ref<string>(props.booking?.time ?? props.initialTime ?? "");
 const formGuests = ref<number>(props.booking?.guests ?? 1);
+const formJoint = ref<boolean>(false);
+const formIsRadio = ref<boolean>(false);
+const formCuratorName = ref<string>("");
+const formDriverName = ref<string>("");
 
 watch([formDate, formTime], async ([d, t]) => {
   if (props.role !== "admin")
@@ -87,7 +89,7 @@ async function onSave() {
   pending.value = true;
   try {
     if (!editing.value) {
-      await s.book(formDate.value, formTime.value, formGuests.value);
+      await s.book(formDate.value, formTime.value, formGuests.value, formJoint.value, formIsRadio.value, formCuratorName.value || undefined, formDriverName.value || undefined);
       emit("close");
     }
     else if (props.role === "admin") {
@@ -96,6 +98,9 @@ async function onSave() {
         date: formDate.value,
         time: formTime.value,
         people: formGuests.value,
+        isRadio: formIsRadio.value,
+        curatorName: formCuratorName.value || undefined,
+        driverName: formDriverName.value || undefined,
       });
       await s.fetchWeek();
       emit("update", {
@@ -105,7 +110,7 @@ async function onSave() {
       });
     }
     else {
-      await s.modifyBooking(String(props.booking!.id), formGuests.value);
+      await s.modifyBooking(String(props.booking!.id), formGuests.value, undefined, formIsRadio.value, formCuratorName.value || undefined, formDriverName.value || undefined);
       await s.fetchWeek();
       emit("update", {
         date: formDate.value,
@@ -137,6 +142,8 @@ async function onDelete() {
   }
 }
 
+const backdropMousedown = ref(false);
+
 function onEditBooking() {
   if (props.booking?.id) {
     router.push(`/booking/${props.booking.id}/edit`);
@@ -146,7 +153,11 @@ function onEditBooking() {
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4" @click="$emit('close')">
+  <div
+    class="fixed inset-0 bg-black/50 flex items-center justify-center z-[600] p-4"
+    @mousedown="backdropMousedown = ($event.target === $event.currentTarget)"
+    @click.self="backdropMousedown && $emit('close')"
+  >
     <Card
       class="w-full max-w-sm relative"
       @click.stop
@@ -173,6 +184,7 @@ function onEditBooking() {
               v-model="formDate"
               locale="ru"
               model-type="yyyy-MM-dd"
+              format="dd.MM.yyyy"
               :auto-apply="true"
               :teleport="true"
               :ui="{ input: 'p-inputtext w-full' }"
@@ -219,6 +231,49 @@ function onEditBooking() {
             >
               Количество гостей превышает максимально доступное для данного слота
             </Message>
+          </div>
+
+          <div class="flex items-center gap-2 mb-4">
+            <Checkbox
+              v-model="formJoint"
+              input-id="joint"
+              :disabled="pending"
+              :binary="true"
+            />
+            <label for="joint" class="text-sm font-medium text-surface-700 cursor-pointer">
+              Сборная
+            </label>
+          </div>
+          <div class="flex items-center gap-2 mb-4">
+            <Checkbox
+              v-model="formIsRadio"
+              input-id="is_radio"
+              :disabled="pending"
+              :binary="true"
+            />
+            <label for="is_radio" class="text-sm font-medium text-surface-700 cursor-pointer">
+              Радиогиды
+            </label>
+          </div>
+
+          <div class="flex flex-col gap-2 mb-4">
+            <label class="text-sm font-medium text-surface-700">Имя сопровождающего</label>
+            <InputText
+              v-model="formCuratorName"
+              :disabled="pending"
+              placeholder="Необязательно"
+              class="w-full"
+            />
+          </div>
+
+          <div class="flex flex-col gap-2 mb-4">
+            <label class="text-sm font-medium text-surface-700">Имя водителя</label>
+            <InputText
+              v-model="formDriverName"
+              :disabled="pending"
+              placeholder="Необязательно"
+              class="w-full"
+            />
           </div>
         </template>
 

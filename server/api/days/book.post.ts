@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event);
-  const { date, time, people_count, precise_time, is_joint } = body;
+  const { date, time, people_count, precise_time, is_joint, is_radio, curator_name, driver_name } = body;
 
   if (!date || !time || !people_count) {
     throw createError({
@@ -93,10 +93,11 @@ export default defineEventHandler(async (event) => {
       peopleCount: people_count,
       preciseTime: preciseTimeValue,
       bookingType: bookingType as "regular" | "joint" | "immediate",
+      isRadio: !!is_radio,
+      curatorName: curator_name ?? null,
+      driverName: driver_name ?? null,
     })
     .returning();
-
-  const status = "booked";
 
   return {
     id: String(booking.id),
@@ -107,6 +108,8 @@ export default defineEventHandler(async (event) => {
     timeslot_id: String(booking.timeslotId),
     precise_time: booking.preciseTime,
     booking_type: booking.bookingType,
-    status,
+    is_radio: booking.isRadio,
+    curator_name: booking.curatorName,
+    driver_name: booking.driverName,
   };
 });

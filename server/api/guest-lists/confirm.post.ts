@@ -70,7 +70,14 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const guestData = [];
+  const guestData: Array<{
+    name: string;
+    date_of_birth: string;
+    city: string;
+    phone: string;
+    email?: string;
+    errors: string[];
+  }> = [];
   const ages: number[] = [];
   let personaErrors = 0;
 
@@ -194,6 +201,7 @@ export default defineEventHandler(async (event) => {
     age: parseDateOfBirthToAge(guest.date_of_birth),
     city: guest.city.trim(),
     phone: normalizePhoneNumber(guest.phone),
+    email: guest.email ? String(guest.email).trim() : null,
   }));
 
   const createdGuests = guestsToInsert.length > 0
@@ -228,6 +236,7 @@ export default defineEventHandler(async (event) => {
         age: g.age,
         city: g.city,
         phone: g.phone,
+        email: g.email,
         created_at: g.createdAt.toISOString(),
         updated_at: g.updatedAt.toISOString(),
       })),

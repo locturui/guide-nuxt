@@ -52,16 +52,23 @@ export default defineEventHandler(async (event) => {
     if (guest.guest_id) {
       const age = parseDateOfBirthToAge(guest.date_of_birth);
       const normalizedPhone = normalizePhoneNumber(guest.phone);
+      const normalizedEmail = guest.email !== undefined ? (guest.email ? String(guest.email).trim() : null) : undefined;
+
+      const setValues: any = {
+        name: guest.name.trim(),
+        dateOfBirth: guest.date_of_birth.trim(),
+        age,
+        city: guest.city.trim(),
+        phone: normalizedPhone,
+        updatedAt: new Date(),
+      };
+      if (normalizedEmail !== undefined)
+        setValues.email = normalizedEmail;
 
       await db
         .update(schema.guests)
         .set({
-          name: guest.name.trim(),
-          dateOfBirth: guest.date_of_birth.trim(),
-          age,
-          city: guest.city.trim(),
-          phone: normalizedPhone,
-          updatedAt: new Date(),
+          ...setValues,
         })
         .where(eq(schema.guests.id, guest.guest_id));
     }

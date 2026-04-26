@@ -219,7 +219,10 @@ export default defineEventHandler(async (event) => {
       agency_id: String(booking.agencyId),
       timeslot_id: String(booking.timeslotId),
       precise_time: booking.preciseTime,
-      status: booking.status,
+      booking_type: booking.bookingType,
+      is_radio: booking.isRadio,
+      curator_name: booking.curatorName,
+      driver_name: booking.driverName,
     },
     guest_list: {
       id: String(guestList.id),

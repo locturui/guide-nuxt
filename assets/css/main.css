@@ -2,6 +2,16 @@
 
 :root {
   color-scheme: light;
+  --p-surface-ground: #f4f9f6;
+  --p-surface-section: #f4f9f6;
+  --p-surface-0: #fbfefc;
+  --p-surface-50: #f7fbf9;
+}
+
+body {
+  background:
+    radial-gradient(ellipse at 65% 0%, #cce8d9 0%, transparent 45%),
+    radial-gradient(ellipse at 0% 100%, #c4e4d0 0%, transparent 40%), #f4f9f6;
 }
 
 html {
@@ -58,6 +68,10 @@ html[data-theme="dark"] {
 .dp__input_wrap .dp__input:not(.dp__input_icon_pad),
 .dp__input_wrap .p-inputtext:not(.dp__input_icon_pad) {
   padding-right: 2.5rem !important;
+}
+
+.floating-day-header {
+  background: linear-gradient(to bottom, #ffffff 0%, #ffffff 55%, rgba(255, 255, 255, 0) 100%) !important;
 }
 
 .sticky-day-header::-webkit-scrollbar {

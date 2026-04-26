@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event);
-  const { name, lastname } = body;
+  const { name, lastname, bonus_points } = body;
 
   if (!name || !lastname) {
     throw createError({
@@ -29,6 +29,7 @@ export default defineEventHandler(async (event) => {
       agencyId: auth.userId,
       name,
       lastname,
+      bonusPoints: typeof bonus_points === "number" ? bonus_points : 0,
     })
     .returning();
 
@@ -37,5 +38,7 @@ export default defineEventHandler(async (event) => {
     name: guide.name,
     lastname: guide.lastname,
     agency_id: guide.agencyId,
+    bonus_points: guide.bonusPoints,
+    removed: guide.removed,
   };
 });

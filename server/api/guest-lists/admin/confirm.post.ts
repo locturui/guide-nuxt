@@ -55,16 +55,12 @@ export default defineEventHandler(async (event) => {
     age: parseDateOfBirthToAge(guest.date_of_birth),
     city: guest.city.trim(),
     phone: normalizePhoneNumber(guest.phone),
+    email: guest.email ? String(guest.email).trim() : null,
   }));
 
   const createdGuests = guestsToInsert.length > 0
     ? await db.insert(schema.guests).values(guestsToInsert).returning()
     : [];
-
-  await db
-    .update(schema.bookings)
-    .set({ status: "filled" })
-    .where(eq(schema.bookings.id, booking_id));
 
   return {
     booking_id,
@@ -73,6 +69,7 @@ export default defineEventHandler(async (event) => {
       date_of_birth: g.dateOfBirth,
       city: g.city,
       phone: g.phone,
+      email: g.email,
       errors: [],
     })),
     errors: [],
@@ -89,6 +86,7 @@ export default defineEventHandler(async (event) => {
         age: g.age,
         city: g.city,
         phone: g.phone,
+        email: g.email,
         created_at: g.createdAt.toISOString(),
         updated_at: g.updatedAt.toISOString(),
       })),
